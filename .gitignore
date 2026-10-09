@@ -1,0 +1,35 @@
+# 构建产物
+MAKE/PLACE_ROUTE/csyn_fp/build/
+MAKE/PLACE_ROUTE/csyn_fp/CMakeCache.txt
+MAKE/PLACE_ROUTE/csyn_fp/CMakeFiles/
+MAKE/PLACE_ROUTE/csyn_fp/Makefile
+MAKE/PLACE_ROUTE/csyn_fp/cmake_install.cmake
+MAKE/PLACE_ROUTE/csyn_fp/placement
+MAKE/PLACE_ROUTE/csyn_fp/output.txt
+MAKE/PLACE_ROUTE/output.txt
+
+# 运行时产物
+MAKE/PLACE_ROUTE/output/
+MAKE/PLACE_ROUTE/input/
+MAKE/PLACE_ROUTE/csyn_fp/input/
+IOnet/
+route/
+gds/
+v40_out/
+run_*/
+delivery_a21oi2/
+run_out/
+run_sky*/
+
+# 中间/备份/对比产物
+*.bak_*
+*.png
+*.gds
+*.ascii
+compare*.py
+render_v40.py
+# 其他中间文件
+DATA/input/sky130_a21oi_2.sp
+mini.style
+mini_asap7.sp
+output.txt

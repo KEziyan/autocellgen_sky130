@@ -166,7 +166,7 @@ void PlaceGrid::print_place (Cell& cell, fs::path outPath, int num) {
 
     place_out << "end" << std::endl;
     place_out << "mosType: PMOS NMOS" << std::endl;
-    place_out << "cellWidth: " << cellWidth + 2 << std::endl;
+    place_out << "cellWidth: " << cellWidth << std::endl;
 
 
     cell_out.close();

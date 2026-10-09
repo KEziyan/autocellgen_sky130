@@ -84,10 +84,18 @@ Transistor::Transistor(const std::vector<std::string>& tokens) {
 	gate = tokens[2];
 	drain = tokens[3];
 	contact = tokens[4];
+	width = 0; length = 0; nfin = 0;
 
-	if (tokens[5] == "nmos_rvt" || tokens[5] == "nfet") type = transtype::NMOS;
-	else if (tokens[5] == "pmos_rvt" || tokens[5] == "pfet") type = transtype::PMOS;
-	else std::cout << "Type Error!" << std::endl;
+	// --- sky130 适配：模型名白名单（ASAP7 名保留兼容）---
+	// nfet_01v8 / nfet_01v8_lvt → NMOS（svt/lvt）
+	// pfet_01v8 / pfet_01v8_hvt / pfet_01v8_lvt → PMOS（svt/hvt/lvt）
+	vt_flavor = "svt";
+	if (tokens[5] == "nmos_rvt" || tokens[5] == "nfet" || tokens[5] == "nfet_01v8") { type = transtype::NMOS; vt_flavor = "svt"; }
+	else if (tokens[5] == "nfet_01v8_lvt") { type = transtype::NMOS; vt_flavor = "lvt"; }
+	else if (tokens[5] == "pmos_rvt" || tokens[5] == "pfet" || tokens[5] == "pfet_01v8") { type = transtype::PMOS; vt_flavor = "svt"; }
+	else if (tokens[5] == "pfet_01v8_hvt") { type = transtype::PMOS; vt_flavor = "hvt"; }
+	else if (tokens[5] == "pfet_01v8_lvt") { type = transtype::PMOS; vt_flavor = "lvt"; }
+	else { std::cout << "Type Error! model = " << tokens[5] << std::endl; type = transtype::NMOS; }
 /*
 	width = stod(tokens[6].substr(2, tokens[6].size() - 1));
 	length = stod(tokens[7].substr(2, tokens[7].size() - 1));
@@ -98,6 +106,7 @@ Transistor::Transistor(const std::vector<std::string>& tokens) {
 		nfin *= nfgr;
 	}
 */
+	double mult = 1.0;   // sky130 m=：并联倍数（fold 成多段，等效宽度翻倍）
 	for (auto iter = tokens.begin() + 6; iter != tokens.end(); ++iter) {
 		if (iter->substr(0, 2) == "w=") {
 			//std::cout << "Width" << std::endl;
@@ -107,6 +116,9 @@ Transistor::Transistor(const std::vector<std::string>& tokens) {
 			//std::cout << "Length" << std::endl;
 			length = stod(iter->substr(2, iter->size() - 1));
 		}
+		else if (iter->substr(0, 2) == "m=") {
+			mult = stod(iter->substr(2, iter->size() - 1));   // sky130 CDL 标准字段
+		}
 		else if (iter->substr(0, 4) == "nfin") {
 			nfin = stoi(iter->substr(5));
 		}
@@ -115,7 +127,11 @@ Transistor::Transistor(const std::vector<std::string>& tokens) {
 			nfin *= nfgr;
 		}
 	}
-
+	// sky130 平面工艺：无鳍。nfin 缺省时按 w 推导（UNIT = 10nm，w 单位 µm）
+	// nfin = round(w_µm × 1000 / 10) × m = round(w_µm × 100) × m
+	if (nfin == 0 && width > 0) {
+		nfin = static_cast<int>(width * 100.0 * mult + 0.5);
+	}
 
 }
 

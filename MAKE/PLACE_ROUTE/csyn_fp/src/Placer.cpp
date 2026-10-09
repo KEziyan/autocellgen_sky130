@@ -367,7 +367,7 @@ void Placer::printSolution(std::string outPath) {
 
     for (int width = min_width; width <= min_width + setting.relaxation; width++) {    
         std::cout<<"print soultion!!!!!"<<std::endl;
-        std::string out_path = outPath.substr(0, outPath.length() - 4) + "_w" + std::to_string(width + 2) + ".txt";
+        std::string out_path = outPath.substr(0, outPath.length() - 4) + "_w" + std::to_string(width) + ".txt";
         std::ofstream out(out_path);
         if (solutions.find(width) != solutions.end()) {
             int counter = 1;

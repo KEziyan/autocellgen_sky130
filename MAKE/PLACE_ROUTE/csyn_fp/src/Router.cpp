@@ -1,4 +1,5 @@
 #include "../header/Router.h"
+#include <map>
 
 Router::~Router() {
 
@@ -2209,6 +2210,15 @@ bool Router::routing(fs::path output_path) {
 
 void Router::generate_ascii(std::ofstream &out, std::string cell_name) {
 
+	// sky130 poly 位置（nm）：栅体 x0-x1（全高）+ landing lx0-lx1（中带 y 995~1325）
+	// 工艺数据（取自官方 GDS 66:20），poly 段与接触段共用同一数据源，保证接触落在 poly 上
+	struct PolyShape { int x0, x1, lx0, lx1; };
+	PolyShape sky130_polys[] = {
+		{ 415,  565,  105,  415},   // 列1：栅体 + 左凸 landing
+		{ 845,  995,  810, 1080},   // 列2：栅体 + 双侧 landing
+		{1290, 1440, 1440, 1710},   // 列3：栅体 + 右凸 landing
+	};
+
 	auto draw_boundary = [](std::ofstream &d_out, int layer_num, std::vector<Point> &points) {
 		int n_point = points.size();
 
@@ -2240,736 +2250,246 @@ void Router::generate_ascii(std::ofstream &out, std::string cell_name) {
 	out << std::endl;
 
 
-	// Draw WELL
-	int gate_pitch = static_cast<int>(ASAP_DR::GATE_PITCH);
-	int num_gate = place_sol.nmos.size();
-	int x_right_boundary = gate_pitch * (num_gate + 2);
-
-	int cell_height = static_cast<int>(ASAP_DR::CELL_HEIGHT);
-
-	out << "BOUNDARY;" << std::endl;
-	out << "LAYER " << static_cast<int>(LAYER::WELL) << ";" << std::endl;
-	out << "DATATYPE 0;" << std::endl;
-	out << "XY 5;" << std::endl;
-	out << " X: 0;		 Y: " << cell_height * 2 << ";" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: " << cell_height * 2 << ";" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: " << cell_height * 4 << ";" << std::endl;
-	out << " X: 0;		 Y: " << cell_height * 4 << ";" << std::endl;
-	out << " X: 0;		 Y: " << cell_height * 2 << ";" << std::endl;
-	out << "ENDEL;" << std::endl;
-
-	// Label WELL
-	out << "TEXT;" << std::endl;
-	out << "LAYER " << static_cast<int>(LAYER::WELL) << ";" << std::endl;
-	out << "TEXTTYPE 251;" << std::endl;
-	out << "PRESENTATION 0,1,1;" << std::endl;
-	out << "PATHTYPE 0;" << std::endl;
-	out << "STRANS 0,0,0;" << std::endl;
-	out << "MAG 2.500000e-02;" << std::endl;
-	out << "XY 1;" << std::endl;
-	out << " X: " << x_right_boundary * 2 << 	";		 Y: " << cell_height * 3 << ";" << std::endl;
-	out << "STRING VDD;" << std::endl;
-	out << "ENDEL;" << std::endl << std::endl;
-
-	// Draw NSELECT
-	out << "BOUNDARY;" << std::endl;
-	out << "LAYER " << static_cast<int>(LAYER::NSELECT) << ";" << std::endl;
-	out << "DATATYPE 0;" << std::endl;
-	out << "XY 5;" << std::endl;
-	out << " X: 0;		 Y: 0;" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: 0;" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: " << cell_height * 2 << ";" << std::endl;
-	out << " X: 0;		 Y: " << cell_height * 2 << ";" << std::endl;
-	out << " X: 0;		 Y: 0;" << std::endl;
-	out << "ENDEL;" << std::endl << std::endl;
-
-	// Draw PSELECT
-	out << "BOUNDARY;" << std::endl;
-	out << "LAYER " << static_cast<int>(LAYER::PSELECT) << ";" << std::endl;
-	out << "DATATYPE 0;" << std::endl;
-	out << "XY 5;" << std::endl;
-	out << " X: 0;		 Y: " << cell_height * 2 << ";" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: " << cell_height * 2 << ";" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: " << cell_height * 4 << ";" << std::endl;
-	out << " X: 0;		 Y: " << cell_height * 4 << ";" << std::endl;
-	out << " X: 0;		 Y: " << cell_height * 2 << ";" << std::endl;
-	out << "ENDEL;" << std::endl << std::endl;
-
-	// Draw BOUNDARY
-	out << "BOUNDARY;" << std::endl;
-	out << "LAYER " << static_cast<int>(LAYER::BOUNDARY) << ";" << std::endl;
-	out << "DATATYPE 0;" << std::endl;
-	out << "XY 5;" << std::endl;
-	out << " X: 0;		 Y: 0;" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: 0;" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: " << cell_height * 4 << ";" << std::endl;
-	out << " X: 0;		 Y: " << cell_height * 4 << ";" << std::endl;
-	out << " X: 0;		 Y: 0;" << std::endl;
-	out << "ENDEL;" << std::endl;
-
-	// Label P_SUB
-	out << "TEXT;" << std::endl;
-	out << "LAYER " << static_cast<int>(LAYER::P_SUB) << ";" << std::endl;
-	out << "TEXTTYPE 251;" << std::endl;
-	out << "PRESENTATION 0,1,1;" << std::endl;
-	out << "PATHTYPE 0;" << std::endl;
-	out << "STRANS 0,0,0;" << std::endl;
-	out << "MAG 2.500000e-02;" << std::endl;
-	out << "XY 1;" << std::endl;
-	out << " X: " << x_right_boundary * 2 << 	";		 Y: -208;" << std::endl;
-	out << "STRING VSS;" << std::endl;
-	out << "ENDEL;" << std::endl << std::endl;
-
-	// Draw Gate
-	int gate_tip_ver = static_cast<int>(ASAP_DR::GATE_TIP_VER);
-	int gate_width = static_cast<int>(ASAP_DR::GATE_WIDTH);
-	for (int i = 0; i < num_gate + 2; i++) {
-		int x_left = (gate_pitch - gate_width) / 2 + gate_pitch * i;
-		int x_right = x_left + gate_width;
-		int y_bot = -gate_tip_ver;
-		int y_top = cell_height + gate_tip_ver;
-
-		out << "BOUNDARY;" << std::endl;
-		out << "LAYER " << static_cast<int>(LAYER::GATE) << ";" << std::endl;
-		out << "DATATYPE 0;" << std::endl;
-		out << "XY 5;" << std::endl;
-		out << " X: " << x_left * 4 << ";		 Y: " << y_bot * 4 << ";" << std::endl;
-		out << " X: " << x_right * 4 << ";		 Y: " << y_bot * 4 << ";" << std::endl;
-		out << " X: " << x_right * 4 << ";		 Y: " << y_top * 4 << ";" << std::endl;
-		out << " X: " << x_left * 4 << ";		 Y: " << y_top * 4 << ";" << std::endl;
-		out << " X: " << x_left * 4 << ";		 Y: " << y_bot * 4 << ";" << std::endl;
-		out << "ENDEL;" << std::endl << std::endl;
-	}	
-
-	// *** Draw GCUT ***
-	int gcut_height = static_cast<int>(ASAP_DR::GCUT_HEIGHT);
-	
-	// VDD-GCUT
-	out << "BOUNDARY;" << std::endl;
-	out << "LAYER " << static_cast<int>(LAYER::GCUT) << ";" << std::endl;
-	out << "DATATYPE 0;" << std::endl;
-	out << "XY 5;" << std::endl;
-	out << " X: 0;		 Y: " << (cell_height - gcut_height / 2) * 4 << ";" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: " << (cell_height - gcut_height / 2) * 4 << ";" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: " << (cell_height + gcut_height / 2) * 4 << ";" << std::endl;
-	out << " X: 0;		 Y: " << (cell_height + gcut_height / 2) * 4 << ";" << std::endl;
-	out << " X: 0;		 Y: " << (cell_height - gcut_height / 2) * 4 << ";" << std::endl;
-	out << "ENDEL;" << std::endl << std::endl;
-
-	// VSS-GCUT
-	out << "BOUNDARY;" << std::endl;
-	out << "LAYER " << static_cast<int>(LAYER::GCUT) << ";" << std::endl;
-	out << "DATATYPE 0;" << std::endl;
-	out << "XY 5;" << std::endl;
-	out << " X: 0;		 Y: " << (- gcut_height / 2) * 4 << ";" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: " << (- gcut_height / 2) * 4 << ";" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: " << (gcut_height / 2) * 4 << ";" << std::endl;
-	out << " X: 0;		 Y: " << (gcut_height / 2) * 4 << ";" << std::endl;
-	out << " X: 0;		 Y: " << (- gcut_height / 2) * 4 << ";" << std::endl;
-	out << "ENDEL;" << std::endl << std::endl;
-
-	// Left-boundary GCUT
-	out << "BOUNDARY;" << std::endl;
-	out << "LAYER " << static_cast<int>(LAYER::GCUT) << ";" << std::endl;
-	out << "DATATYPE 0;" << std::endl;
-	out << "XY 5;" << std::endl;
-	out << " X: 0;		 Y: " << (cell_height / 2 - gcut_height / 2) * 4 << ";" << std::endl;
-	out << " X: " << gate_pitch * 4 << ";		 Y: " << (cell_height / 2 - gcut_height / 2) * 4 << ";" << std::endl;
-	out << " X: " << gate_pitch * 4 << ";		 Y: " << (cell_height / 2 + gcut_height / 2) * 4 << ";" << std::endl;
-	out << " X: 0;		 Y: " << (cell_height / 2 + gcut_height / 2) * 4 << ";" << std::endl;
-	out << " X: 0;		 Y: " << (cell_height / 2 - gcut_height / 2) * 4 << ";" << std::endl;
-	out << "ENDEL;" << std::endl << std::endl;
-
-	// Right-boundary GCUT
-	out << "BOUNDARY;" << std::endl;
-	out << "LAYER " << static_cast<int>(LAYER::GCUT) << ";" << std::endl;
-	out << "DATATYPE 0;" << std::endl;
-	out << "XY 5;" << std::endl;
-	out << " X: " << (x_right_boundary - gate_pitch) * 4 << ";		 Y: " << (cell_height / 2 - gcut_height / 2) * 4 << ";" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: " << (cell_height / 2 - gcut_height / 2) * 4 << ";" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: " << (cell_height / 2 + gcut_height / 2) * 4 << ";" << std::endl;
-	out << " X: " << (x_right_boundary - gate_pitch) * 4 << ";		 Y: " << (cell_height / 2 + gcut_height / 2) * 4 << ";" << std::endl;
-	out << " X: " << (x_right_boundary - gate_pitch) * 4 << ";		 Y: " << (cell_height / 2 - gcut_height / 2) * 4 << ";" << std::endl;
-	out << "ENDEL;" << std::endl << std::endl;
-
-	// Internal dummy gates
-	int consecutive = -1;
-	for (int i = 0; i < num_gate; i++) {
-		if (place_sol.nmos[i].gate == "dummy" && place_sol.pmos[i].gate == "dummy") {
-			if (consecutive < 0) consecutive = i;
-		}
-		else {
-			if (consecutive >= 0) {
-				// found dummy gates
-				int x_left = gate_pitch * (consecutive + 1);
-				int x_right = gate_pitch * (i + 1);
-				// print
-				out << "BOUNDARY;" << std::endl;
-				out << "LAYER " << static_cast<int>(LAYER::GCUT) << ";" << std::endl;
-				out << "DATATYPE 0;" << std::endl;
-				out << "XY 5;" << std::endl;
-				out << " X: " << x_left * 4 << ";		 Y: " << (cell_height / 2 - gcut_height / 2) * 4 << ";" << std::endl;
-				out << " X: " << x_right * 4 << ";		 Y: " << (cell_height / 2 - gcut_height / 2) * 4 << ";" << std::endl;
-				out << " X: " << x_right * 4 << ";		 Y: " << (cell_height / 2 + gcut_height / 2) * 4 << ";" << std::endl;
-				out << " X: " << x_left * 4 << ";		 Y: " << (cell_height / 2 + gcut_height / 2) * 4 << ";" << std::endl;
-				out << " X: " << x_left * 4 << ";		 Y: " << (cell_height / 2 - gcut_height / 2) * 4 << ";" << std::endl;
-				out << "ENDEL;" << std::endl << std::endl;
-
-				consecutive = -1;
-			}	
-		}
-	}
-
-	// Draw FIN
-	int fin_height = static_cast<int>(ASAP_DR::FIN_HEIGHT);
-	int fin_spacing = static_cast<int>(ASAP_DR::FIN_SPACING);
-
-	for (int i = 0; i < 10; i++) {
-		int y_bot = fin_spacing / 2 + (fin_height + fin_spacing) * i;
-		int y_top = y_bot + fin_height;
-
-		out << "BOUNDARY;" << std::endl;
-		out << "LAYER " << static_cast<int>(LAYER::FIN) << ";" << std::endl;
-		out << "DATATYPE 0;" << std::endl;
-		out << "XY 5;" << std::endl;
-		out << " X: 0;		 Y: " << y_bot * 4 << ";" << std::endl;
-		out << " X: " << x_right_boundary * 4 << ";		 Y: " << y_bot * 4 << ";" << std::endl;
-		out << " X: " << x_right_boundary * 4 << ";		 Y: " << y_top * 4 << ";" << std::endl;
-		out << " X: 0;		 Y: " << y_top * 4 << ";" << std::endl;
-		out << " X: 0;		 Y: " << y_bot * 4 << ";" << std::endl;
-		out << "ENDEL;" << std::endl << std::endl;
-	}
-
-
-	// Draw ACTIVE
-	// PMOS Region
-	int active_unit = static_cast<int>(ASAP_DR::ACTIVE_UNIT);
-	int min_active_height = static_cast<int>(ASAP_DR::MIN_ACTIVE_HEIGHT);
-	int gate_to_active = gate_pitch - gate_width - min_active_height;
-	std::vector<Point> bd_points; // (y, x)
-	bool is_drawing = false;
-	for (int i = 0; i < num_gate; i++) {
-		if (place_sol.pmos[i].nfin > 0) {
-			if (!is_drawing) { // Start drawing
-				int top_y = cell_height - active_unit;
-				int y = cell_height - active_unit * (place_sol.pmos[i].nfin + 1);
-				int x = gate_pitch / 2 + gate_pitch * (i + 1) - gate_width / 2 - min_active_height;
-				bd_points.emplace_back(top_y, x);
-				bd_points.emplace_back(y, x);
-				is_drawing = true;
-			}
-			else {            // Drawing ~ing
-				assert(i > 0);
-				if (place_sol.pmos[i - 1].nfin != place_sol.pmos[i].nfin) { // add boundary points
-					int x;
-					if (place_sol.pmos[i - 1].nfin < place_sol.pmos[i].nfin) x = gate_pitch / 2 + gate_pitch * (i + 1) - gate_width / 2 - min_active_height;
-					else x = gate_pitch / 2 + gate_pitch * (i + 1) - gate_width / 2 - gate_to_active;
-					
-					int prev_y = cell_height - active_unit * (place_sol.pmos[i - 1].nfin + 1);
-					int curr_y = cell_height - active_unit * (place_sol.pmos[i].nfin + 1);
-					bd_points.emplace_back(prev_y, x);
-					bd_points.emplace_back(curr_y, x);
-				}
-			}
-		}
-
-		else {                // MEET DUMMY GATE
-			if (is_drawing) { // Terminate drawing
-				assert(i > 0);
-				int x = gate_pitch / 2 + gate_pitch * (i + 1) - gate_width / 2 - gate_to_active;
-				int prev_y = cell_height - active_unit * (place_sol.pmos[i - 1].nfin + 1);
-				int top_y = cell_height - active_unit;
-
-				bd_points.emplace_back(prev_y, x);
-				bd_points.emplace_back(top_y, x);
-				bd_points.push_back(bd_points[0]);
-
-				// Drawing
-				int bd_points_size = bd_points.size();
-
-				out << "BOUNDARY;" << std::endl;
-				out << "LAYER " << static_cast<int>(LAYER::ACTIVE) << ";" << std::endl;
-				out << "DATATYPE 0;" << std::endl;
-				out << "XY " << bd_points_size << ";" << std::endl;
-				for (int j = 0; j < bd_points_size; j++) {
-					out << " X: " << bd_points[j].x * 4 << ";		 Y: " << bd_points[j].y * 4 << ";" << std::endl;
-				}
-				out << "ENDEL;" << std::endl << std::endl;
-
-				bd_points.clear();
-				is_drawing = false;
-			}
-		}
-
-		if (i == num_gate - 1 && is_drawing) {
-			int x = gate_pitch / 2 + gate_pitch * (i + 1) + gate_width / 2 + min_active_height;
-			int curr_y = cell_height - active_unit * (place_sol.pmos[i].nfin + 1);
-			int top_y = cell_height - active_unit;
-
-			bd_points.emplace_back(curr_y, x);
-			bd_points.emplace_back(top_y, x);
-			bd_points.push_back(bd_points[0]);
-		
-			// Drawing
-			int bd_points_size = bd_points.size();
-
-			out << "BOUNDARY;" << std::endl;
-			out << "LAYER " << static_cast<int>(LAYER::ACTIVE) << ";" << std::endl;
-			out << "DATATYPE 0;" << std::endl;
-			out << "XY " << bd_points_size << ";" << std::endl;
-			for (int j = 0; j < bd_points_size; j++) {
-				out << " X: " << bd_points[j].x * 4 << ";		 Y: " << bd_points[j].y * 4 << ";" << std::endl;
-			}
-			out << "ENDEL;" << std::endl << std::endl;
-
-			bd_points.clear();
-			is_drawing = false;
-		}
-	}
-
-	// NMOS Region
-	is_drawing = false;
-	for (int i = 0; i < num_gate; i++) {
-		if (place_sol.nmos[i].nfin > 0) {
-			if (!is_drawing) { // Start drawing
-				int bot_y = active_unit;
-				int y = active_unit * (place_sol.nmos[i].nfin + 1);
-				int x = gate_pitch / 2 + gate_pitch * (i + 1) - gate_width / 2 - min_active_height;
-				bd_points.emplace_back(bot_y, x);
-				bd_points.emplace_back(y, x);
-				is_drawing = true;
-			}
-			else {            // Drawing ~ing
-				assert(i > 0);
-				if (place_sol.nmos[i - 1].nfin != place_sol.nmos[i].nfin) { // add boundary points
-					int x;
-					if (place_sol.nmos[i - 1].nfin < place_sol.nmos[i].nfin) x = gate_pitch / 2 + gate_pitch * (i + 1) - gate_width / 2 - min_active_height;
-					else x = gate_pitch / 2 + gate_pitch * (i + 1) - gate_width / 2 - gate_to_active;
-					int prev_y = active_unit * (place_sol.nmos[i - 1].nfin + 1);
-					int curr_y = active_unit * (place_sol.nmos[i].nfin + 1);
-					bd_points.emplace_back(prev_y, x);
-					bd_points.emplace_back(curr_y, x);
-				}
-			}
-		}
-
-		else {                // MEET DUMMY GATE
-			if (is_drawing) { // Terminate drawing
-				assert(i > 0);
-				int x = gate_pitch / 2 + gate_pitch * (i + 1) - gate_width / 2 - gate_to_active;
-				int prev_y = active_unit * (place_sol.nmos[i - 1].nfin + 1);
-				int bot_y = active_unit;
-
-				bd_points.emplace_back(prev_y, x);
-				bd_points.emplace_back(bot_y, x);
-				bd_points.push_back(bd_points[0]);
-
-				// Drawing
-				int bd_points_size = bd_points.size();
-
-				out << "BOUNDARY;" << std::endl;
-				out << "LAYER " << static_cast<int>(LAYER::ACTIVE) << ";" << std::endl;
-				out << "DATATYPE 0;" << std::endl;
-				out << "XY " << bd_points_size << ";" << std::endl;
-				for (int j = 0; j < bd_points_size; j++) {
-					out << " X: " << bd_points[j].x * 4 << ";		 Y: " << bd_points[j].y * 4 << ";" << std::endl;
-				}
-				out << "ENDEL;" << std::endl << std::endl;
-
-				bd_points.clear();
-				is_drawing = false;
-			}
-		}
-		if (i == num_gate - 1 && is_drawing) {
-			int x = gate_pitch / 2 + gate_pitch * (i + 1) + gate_width / 2 + min_active_height;
-			int curr_y = active_unit * (place_sol.nmos[i].nfin + 1);
-			int bot_y = active_unit;
-
-			bd_points.emplace_back(curr_y, x);
-			bd_points.emplace_back(bot_y, x);
-			bd_points.push_back(bd_points[0]);
-		
-			// Drawing
-			int bd_points_size = bd_points.size();
-
-			out << "BOUNDARY;" << std::endl;
-			out << "LAYER " << static_cast<int>(LAYER::ACTIVE) << ";" << std::endl;
-			out << "DATATYPE 0;" << std::endl;
-			out << "XY " << bd_points_size << ";" << std::endl;
-			for (int j = 0; j < bd_points_size; j++) {
-				out << " X: " << bd_points[j].x * 4 << ";		 Y: " << bd_points[j].y * 4 << ";" << std::endl;
-			}
-			out << "ENDEL;" << std::endl << std::endl;
-
-			bd_points.clear();
-			is_drawing = false;
-		}
-	}
-
-	// Draw SDT
-	std::vector<std::string> pmos_diff, nmos_diff, gate_diff;
-	std::vector<int> pmos_fin, nmos_fin;
-	for (int i = 0; i < num_gate; i++) {
-		std::string gate_net = (place_sol.pmos[i].gate != "dummy") ? place_sol.pmos[i].gate : place_sol.nmos[i].gate;
-		gate_diff.push_back(gate_net);
-		
-		// left diffusion
-		if (i == 0) {
-			pmos_diff.push_back(place_sol.pmos[i].left);
-			nmos_diff.push_back(place_sol.nmos[i].left);
-			pmos_fin.push_back(place_sol.pmos[i].nfin);
-			nmos_fin.push_back(place_sol.nmos[i].nfin);
-		}
-		
-		// right diffusion
-		if (i != num_gate - 1) {
-			std::string right_net;
-			right_net = (place_sol.pmos[i].right != "dummy") ? place_sol.pmos[i].right : place_sol.pmos[i + 1].left;
-			pmos_diff.push_back(right_net);
-			pmos_fin.push_back(std::max(place_sol.pmos[i].nfin, place_sol.pmos[i + 1].nfin));
-			
-			right_net = (place_sol.nmos[i].right != "dummy") ? place_sol.nmos[i].right : place_sol.nmos[i + 1].left;
-			nmos_diff.push_back(right_net);
-			nmos_fin.push_back(std::max(place_sol.nmos[i].nfin, place_sol.nmos[i + 1].nfin));
-		}
-		else {
-			pmos_diff.push_back(place_sol.pmos[i].right);
-			nmos_diff.push_back(place_sol.nmos[i].right);
-			pmos_fin.push_back(place_sol.pmos[i].nfin);
-			nmos_fin.push_back(place_sol.nmos[i].nfin);
-		}
-	}
-
-	// count number of regions per each net
-
-	std::unordered_map<std::string, int> num_pin;
-	int num_diff = pmos_diff.size();
-	for (int i = 0; i < num_diff; i++) {
-		if (pmos_diff[i] != "dummy") {
-			if (num_pin.find(pmos_diff[i]) == num_pin.end()) num_pin[pmos_diff[i]] = 1;
-			else num_pin[pmos_diff[i]]++;
-		}
-		if (nmos_diff[i] != "dummy") {
-			if (num_pin.find(nmos_diff[i]) == num_pin.end()) num_pin[nmos_diff[i]] = 1;
-			else num_pin[nmos_diff[i]]++;
-		}
-	}
-	bool is_consecutive = false;
-	for (int i = 0; i < num_gate; i++) {
-		if (gate_diff[i] == "dummy") {
-			if (is_consecutive) {
-				if (num_pin.find(gate_diff[i - 1]) == num_pin.end()) num_pin[gate_diff[i - 1]] = 1;
-				else num_pin[gate_diff[i - 1]]++;
-				is_consecutive = false;
-			}
-		}
-		else {
-			if (!is_consecutive) is_consecutive = true;
-			else {
-				assert(i > 0);
-				if (gate_diff[i] != gate_diff[i - 1]) {
-					if (num_pin.find(gate_diff[i - 1]) == num_pin.end()) num_pin[gate_diff[i - 1]] = 1;
-					else num_pin[gate_diff[i - 1]]++;
-					is_consecutive = true;
-				}
-			}
-		}
-		if (i == num_gate - 1 && is_consecutive) {
-			if (num_pin.find(gate_diff[i]) == num_pin.end()) num_pin[gate_diff[i]] = 1;
-			else num_pin[gate_diff[i]]++;
-		}
-	}
-
-	int sdt_width = static_cast<int>(ASAP_DR::SDT_WIDTH);
-
-	for (int i = 0; i < num_diff; i++) {
-		if ((pmos_diff[i] != "dummy" && num_pin[pmos_diff[i]] > 1) || (pmos_diff[i] == "VDD")) {
-			int lx = gate_pitch * (i + 1) - sdt_width / 2;
-			int rx = gate_pitch * (i + 1) + sdt_width / 2;
-			int ty = cell_height - active_unit;
-			int by = ty - active_unit * pmos_fin[i];
-
-			out << "BOUNDARY;" << std::endl;
-			out << "LAYER " << static_cast<int>(LAYER::SDT) << ";" << std::endl;
-			out << "DATATYPE 0;" << std::endl;
-			out << "XY 5;" << std::endl;
-			out << " X: " << lx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-			out << " X: " << rx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-			out << " X: " << rx * 4 << ";		 Y: " << by * 4 << ";" << std::endl;
-			out << " X: " << lx * 4 << ";		 Y: " << by * 4 << ";" << std::endl;
-			out << " X: " << lx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-			out << "ENDEL;" << std::endl << std::endl;
-
-		}
-
-		if ((nmos_diff[i] != "dummy" && num_pin[nmos_diff[i]] > 1) || (nmos_diff[i] == "VSS")) {
-			int lx = gate_pitch * (i + 1) - sdt_width / 2;
-			int rx = gate_pitch * (i + 1) + sdt_width / 2;
-			int ty = active_unit * (nmos_fin[i] + 1);
-			int by = active_unit;
-
-			out << "BOUNDARY;" << std::endl;
-			out << "LAYER " << static_cast<int>(LAYER::SDT) << ";" << std::endl;
-			out << "DATATYPE 0;" << std::endl;
-			out << "XY 5;" << std::endl;
-			out << " X: " << lx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-			out << " X: " << rx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-			out << " X: " << rx * 4 << ";		 Y: " << by * 4 << ";" << std::endl;
-			out << " X: " << lx * 4 << ";		 Y: " << by * 4 << ";" << std::endl;
-			out << " X: " << lx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-			out << "ENDEL;" << std::endl << std::endl;
-
-		}
-
-	}
-
-	// Draw LISD
-	int lisd_width = static_cast<int>(ASAP_DR::LISD_WIDTH);
-
-	// Draw Active-connecting LISD first
-	for (auto& active_lisd_info : mol_active) {
-		std::string region = std::get<1>(active_lisd_info);
-		int nfin = std::get<2>(active_lisd_info);
-		int l_active = std::get<3>(active_lisd_info);
-		int r_active = std::get<4>(active_lisd_info);
-
-		int lx = gate_pitch * (l_active + 1) - lisd_width / 2;
-		int rx = gate_pitch * (r_active + 1) + lisd_width / 2;
-
-		int ty, by;
-
-		if (region == "p") {
-			ty = cell_height - active_unit;
-			by = cell_height - active_unit * (nfin + 1);
-		}
-		else if (region == "n") {
-			ty = active_unit * (nfin + 1);
-			by = active_unit;
-		}
-		out << "BOUNDARY;" << std::endl;
-		out << "LAYER " << static_cast<int>(LAYER::LISD) << ";" << std::endl;
-		out << "DATATYPE 0;" << std::endl;
-		out << "XY 5;" << std::endl;
-		out << " X: " << lx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-		out << " X: " << rx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-		out << " X: " << rx * 4 << ";		 Y: " << by * 4 << ";" << std::endl;
-		out << " X: " << lx * 4 << ";		 Y: " << by * 4 << ";" << std::endl;
-		out << " X: " << lx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-		out << "ENDEL;" << std::endl << std::endl;
-	}
-
-	// draw individual active's LISD
-	for (int i = 0; i < num_diff; i++) {
-		if ((pmos_diff[i] != "dummy" && num_pin[pmos_diff[i]] > 1) || (pmos_diff[i] == "VDD")) {
-			
-			bool is_indep = true;
-			for (auto& active_lisd_info : mol_active) {
-				std::string region = std::get<1>(active_lisd_info);
-				if (region == "p") {
-					int l_active = std::get<3>(active_lisd_info);
-					int r_active = std::get<4>(active_lisd_info);
-					if (i >= l_active && i <= r_active) {
-						is_indep = false;
-						break;
-					}  
-				}
-			}
-			if (is_indep) {
-
-				int lx = gate_pitch * (i + 1) - lisd_width / 2;
-				int rx = gate_pitch * (i + 1) + lisd_width / 2;
-				int ty = (pmos_diff[i] == "VDD") ? (cell_height) : (cell_height - active_unit);
-				int by = cell_height - active_unit * (pmos_fin[i] + 1);
-				
-				out << "BOUNDARY;" << std::endl;
-				out << "LAYER " << static_cast<int>(LAYER::LISD) << ";" << std::endl;
-				out << "DATATYPE 0;" << std::endl;
-				out << "XY 5;" << std::endl;
-				out << " X: " << lx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-				out << " X: " << rx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-				out << " X: " << rx * 4 << ";		 Y: " << by * 4 << ";" << std::endl;
-				out << " X: " << lx * 4 << ";		 Y: " << by * 4 << ";" << std::endl;
-				out << " X: " << lx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-				out << "ENDEL;" << std::endl << std::endl;
-			}
-
-		}
-
-		if ((nmos_diff[i] != "dummy" && num_pin[nmos_diff[i]] > 1) || (nmos_diff[i] == "VSS")) {
-			
-			bool is_indep = true;
-			for (auto& active_lisd_info : mol_active) {
-				std::string region = std::get<1>(active_lisd_info);
-				if (region == "n") {
-					int l_active = std::get<3>(active_lisd_info);
-					int r_active = std::get<4>(active_lisd_info);
-					if (i >= l_active && i <= r_active) {
-						is_indep = false;
-						break;
-					}  
-				}
-			}
-			if (is_indep) {
-				int lx = gate_pitch * (i + 1) - lisd_width / 2;
-				int rx = gate_pitch * (i + 1) + lisd_width / 2;
-				int ty = active_unit * (nmos_fin[i] + 1);
-				int by = (nmos_diff[i] == "VSS") ? 0 : active_unit;
-
-				out << "BOUNDARY;" << std::endl;
-				out << "LAYER " << static_cast<int>(LAYER::LISD) << ";" << std::endl;
-				out << "DATATYPE 0;" << std::endl;
-				out << "XY 5;" << std::endl;
-				out << " X: " << lx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-				out << " X: " << rx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-				out << " X: " << rx * 4 << ";		 Y: " << by * 4 << ";" << std::endl;
-				out << " X: " << lx * 4 << ";		 Y: " << by * 4 << ";" << std::endl;
-				out << " X: " << lx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-				out << "ENDEL;" << std::endl << std::endl;
-			}
-		}
-	}
-
-	// Draw LIG
-	int lig_pwr_height = static_cast<int>(ASAP_DR::LIG_PWR_HEIGHT);
-	int lig_center_height = static_cast<int>(ASAP_DR::LIG_CENTER_HEIGHT);
-
-	// LIG in power rails
-	out << "BOUNDARY;" << std::endl;
-	out << "LAYER " << static_cast<int>(LAYER::LIG) << ";" << std::endl;
-	out << "DATATYPE 0;" << std::endl;
-	out << "XY 5;" << std::endl;
-	out << " X: " << 0 << ";		 Y: " << (-lig_pwr_height / 2) * 4 << ";" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: " << (-lig_pwr_height / 2) * 4 << ";" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: " << (lig_pwr_height / 2) * 4 << ";" << std::endl;
-	out << " X: " << 0 << ";		 Y: " << (lig_pwr_height / 2) * 4 << ";" << std::endl;
-	out << " X: " << 0 << ";		 Y: " << (-lig_pwr_height / 2) * 4 << ";" << std::endl;
-	out << "ENDEL;" << std::endl << std::endl;
-
-	out << "BOUNDARY;" << std::endl;
-	out << "LAYER " << static_cast<int>(LAYER::LIG) << ";" << std::endl;
-	out << "DATATYPE 0;" << std::endl;
-	out << "XY 5;" << std::endl;
-	out << " X: " << 0 << ";		 Y: " << (cell_height - lig_pwr_height / 2) * 4 << ";" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: " << (cell_height - lig_pwr_height / 2) * 4 << ";" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: " << (cell_height + lig_pwr_height / 2) * 4 << ";" << std::endl;
-	out << " X: " << 0 << ";		 Y: " << (cell_height + lig_pwr_height / 2) * 4 << ";" << std::endl;
-	out << " X: " << 0 << ";		 Y: " << (cell_height - lig_pwr_height / 2) * 4 << ";" << std::endl;
-	out << "ENDEL;" << std::endl << std::endl;
-
-	// LIG in center regions
-	for (int i = 0; i < num_gate; i++) {
-		std::cout << gate_diff[i] << " ";
-	}
-	std::cout << std::endl;
-
-	int lig_gate = static_cast<int>(ASAP_DR::LIG_GATE);
-
-	int s_gate = -1;
-	for (int i = 0; i < num_gate; i++) {
-		if (gate_diff[i] == "dummy") {
-			if (s_gate >= 0) {   // s_gate ~ i-1
-				int lx = gate_pitch / 2 + gate_pitch * (s_gate + 1) - gate_width / 2 - lig_gate;
-				int rx = gate_pitch / 2 + gate_pitch * i + gate_width / 2 + lig_gate;
-				int ty = cell_height / 2 + lig_center_height / 2;
-				int by = cell_height / 2 - lig_center_height / 2;
-
-				out << "BOUNDARY;" << std::endl;
-				out << "LAYER " << static_cast<int>(LAYER::LIG) << ";" << std::endl;
-				out << "DATATYPE 0;" << std::endl;
-				out << "XY 5;" << std::endl;
-				out << " X: " << lx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-				out << " X: " << rx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-				out << " X: " << rx * 4 << ";		 Y: " << by * 4 << ";" << std::endl;
-				out << " X: " << lx * 4 << ";		 Y: " << by * 4 << ";" << std::endl;
-				out << " X: " << lx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-				out << "ENDEL;" << std::endl << std::endl;
-				
-				s_gate = -1;
-			}
-		}
-		else {
-			if (s_gate < 0) s_gate = i;
-			else {
-				assert(i > 0);
-				if (gate_diff[i] != gate_diff[i - 1]) { // s_gate ~ i-1
-					int lx = gate_pitch / 2 + gate_pitch * (s_gate + 1) - gate_width / 2 - lig_gate;
-					int rx = gate_pitch / 2 + gate_pitch * i + gate_width / 2 + lig_gate;
-					int ty = cell_height / 2 + lig_center_height / 2;
-					int by = cell_height / 2 - lig_center_height / 2;
-
-					out << "BOUNDARY;" << std::endl;
-					out << "LAYER " << static_cast<int>(LAYER::LIG) << ";" << std::endl;
-					out << "DATATYPE 0;" << std::endl;
-					out << "XY 5;" << std::endl;
-					out << " X: " << lx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-					out << " X: " << rx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-					out << " X: " << rx * 4 << ";		 Y: " << by * 4 << ";" << std::endl;
-					out << " X: " << lx * 4 << ";		 Y: " << by * 4 << ";" << std::endl;
-					out << " X: " << lx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-					out << "ENDEL;" << std::endl << std::endl;
-					
-					s_gate = i;
-				}
-			}
-		}
-		if (i == num_gate - 1 && s_gate >= 0) {
-			int lx = gate_pitch / 2 + gate_pitch * (s_gate + 1) - gate_width / 2 - lig_gate;
-			int rx = gate_pitch / 2 + gate_pitch * (i + 1) + gate_width / 2 + lig_gate;
-			int ty = cell_height / 2 + lig_center_height / 2;
-			int by = cell_height / 2 - lig_center_height / 2;
-
-			out << "BOUNDARY;" << std::endl;
-			out << "LAYER " << static_cast<int>(LAYER::LIG) << ";" << std::endl;
-			out << "DATATYPE 0;" << std::endl;
-			out << "XY 5;" << std::endl;
-			out << " X: " << lx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-			out << " X: " << rx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-			out << " X: " << rx * 4 << ";		 Y: " << by * 4 << ";" << std::endl;
-			out << " X: " << lx * 4 << ";		 Y: " << by * 4 << ";" << std::endl;
-			out << " X: " << lx * 4 << ";		 Y: " << ty * 4 << ";" << std::endl;
-			out << "ENDEL;" << std::endl << std::endl;
-					
-			s_gate = -1;		
-		}
-	}
-
-	// Draw V0
-	// Boundary V0
-	int v0_width = static_cast<int>(ASAP_DR::V0_WIDTH);
-	for (int i = 0; i <= num_gate; i++) {
-		int lx = gate_pitch * (i + 1) - v0_width / 2;
-		int rx = gate_pitch * (i + 1) + v0_width / 2;
-
-		// PMOS Region
-		out << "BOUNDARY;" << std::endl;
-		out << "LAYER " << static_cast<int>(LAYER::V0) << ";" << std::endl;
-		out << "DATATYPE 0;" << std::endl;
-		out << "XY 5;" << std::endl;
-		out << " X: " << lx * 4 << ";		 Y: " << (cell_height + v0_width / 2) * 4 << ";" << std::endl;
-		out << " X: " << rx * 4 << ";		 Y: " << (cell_height + v0_width / 2) * 4 << ";" << std::endl;
-		out << " X: " << rx * 4 << ";		 Y: " << (cell_height - v0_width / 2) * 4 << ";" << std::endl;
-		out << " X: " << lx * 4 << ";		 Y: " << (cell_height - v0_width / 2) * 4 << ";" << std::endl;
-		out << " X: " << lx * 4 << ";		 Y: " << (cell_height + v0_width / 2) * 4 << ";" << std::endl;
-		out << "ENDEL;" << std::endl << std::endl;
-
-		// NMOS Region
-		out << "BOUNDARY;" << std::endl;
-		out << "LAYER " << static_cast<int>(LAYER::V0) << ";" << std::endl;
-		out << "DATATYPE 0;" << std::endl;
-		out << "XY 5;" << std::endl;
-		out << " X: " << lx * 4 << ";		 Y: " << (v0_width / 2) * 4 << ";" << std::endl;
-		out << " X: " << rx * 4 << ";		 Y: " << (v0_width / 2) * 4 << ";" << std::endl;
-		out << " X: " << rx * 4 << ";		 Y: " << (-v0_width / 2) * 4 << ";" << std::endl;
-		out << " X: " << lx * 4 << ";		 Y: " << (-v0_width / 2) * 4 << ";" << std::endl;
-		out << " X: " << lx * 4 << ";		 Y: " << (v0_width / 2) * 4 << ";" << std::endl;
-		out << "ENDEL;" << std::endl << std::endl;
-	}
-
 	int m1_width = static_cast<int>(ASAP_DR::M1_WIDTH);
 	int m1_pitch = static_cast<int>(ASAP_DR::M1_PITCH);
 	int m1_v0_ex = static_cast<int>(ASAP_DR::M1_V0_EX);
 	int m1_t2t = static_cast<int>(ASAP_DR::M1_T2T);
 	int m1_t2s = static_cast<int>(ASAP_DR::M1_T2S);
+	int active_unit = static_cast<int>(ASAP_DR::ACTIVE_UNIT);
+
+
+	// ============ sky130_fd_sc_hd 版图几何（数值来自官方 a21oi_1 GDS 实测，nm） ============
+	int gate_pitch = static_cast<int>(ASAP_DR::GATE_PITCH);
+	int num_gate = place_sol.nmos.size();
+	// 官方单元宽 = (栅数+1) × 栅距：3 栅 → 4 列 × 460 = 1840nm
+	int x_right_boundary = gate_pitch * (num_gate + 1);
+
+	int cell_height = static_cast<int>(ASAP_DR::CELL_HEIGHT);
+	int gate_width = static_cast<int>(ASAP_DR::GATE_WIDTH);
+	int gate_tip_ver = static_cast<int>(ASAP_DR::GATE_TIP_VER);
+	int lisd_width = static_cast<int>(ASAP_DR::LISD_WIDTH);
+	int v0_width = static_cast<int>(ASAP_DR::V0_WIDTH);
+
+	// 局部画矩形 helper（层 / datatype / 左下 / 右上，单位 nm，×4 转 DBU）
+	auto draw_rect = [](std::ofstream &d_out, int layer_num, int datatype, int x1, int y1, int x2, int y2) {
+		d_out << "BOUNDARY;" << std::endl;
+		d_out << "LAYER " << layer_num << ";" << std::endl;
+		d_out << "DATATYPE " << datatype << ";" << std::endl;
+		d_out << "XY 5;" << std::endl;
+		d_out << " X: " << x1 * 4 << ";		 Y: " << y1 * 4 << ";" << std::endl;
+		d_out << " X: " << x2 * 4 << ";		 Y: " << y1 * 4 << ";" << std::endl;
+		d_out << " X: " << x2 * 4 << ";		 Y: " << y2 * 4 << ";" << std::endl;
+		d_out << " X: " << x1 * 4 << ";		 Y: " << y2 * 4 << ";" << std::endl;
+		d_out << " X: " << x1 * 4 << ";		 Y: " << y1 * 4 << ";" << std::endl;
+		d_out << "ENDEL;" << std::endl << std::endl;
+	};
+
+	int xr = x_right_boundary;
+
+	// ---- 1. 单元边界 236:0 全高 ----
+	draw_rect(out, static_cast<int>(LAYER::BOUNDARY), 0, 0, 0, xr, cell_height);
+	draw_rect(out, 81, 4, 0, 0, xr, cell_height);   // aux 81:4 全 cell 框（官方标签层）
+
+	// ---- 2. 注入/阱带（官方实测：nwell 外扩 190；nsdm/psdm/hvtp 分带） ----
+	draw_rect(out, static_cast<int>(LAYER::WELL),    20, -190, 1305, xr + 190, 2910);   // nwell 64:20
+	draw_rect(out, static_cast<int>(LAYER::NSELECT), 44,    0, -190, xr,       1015);   // nsdm 93:44（NMOS 区）
+	draw_rect(out, static_cast<int>(LAYER::PSELECT), 20,    0, 1355, xr,       2910);   // psdm 94:20（PMOS 区）
+	draw_rect(out, static_cast<int>(LAYER::HVTP),    44,    0, 1250, xr,       2720);   // hvtp 78:44（pfet_01v8_hvt 注入）
+	draw_rect(out, static_cast<int>(LAYER::NPC),     20,    0,  975, xr,       1345);   // npc 95:20（栅接触带）
+
+	// ---- 3. diff 两条（官方：PMOS y[1485,2485]，NMOS y[235,885]，x[150,1705]） ----
+	draw_rect(out, static_cast<int>(LAYER::ACTIVE), 20, 150, 1485, xr - 135, 2485);   // PMOS
+	draw_rect(out, static_cast<int>(LAYER::ACTIVE), 20, 150,  235, xr - 135,  885);   // NMOS
+
+	// ---- 4. poly 栅 66:20（sky130 形状：栅体 150nm 全高 y[105,2615] + 中带 landing 凸出） ----
+	{
+		for (auto& pg : sky130_polys) {
+			// 栅体全高（poly 跨过 diff 的完整栅极）
+			draw_rect(out, static_cast<int>(LAYER::GATE), 20, pg.x0, gate_tip_ver, pg.x1, cell_height - gate_tip_ver);
+			// landing 只画栅体外凸部分（lx0<x0 → 左凸；lx1>x1 → 右凸），避免与栅体重叠
+			if (pg.lx0 < pg.x0) draw_rect(out, static_cast<int>(LAYER::GATE), 20, pg.lx0, 995, pg.x0, 1325);
+			if (pg.lx1 > pg.x1) draw_rect(out, static_cast<int>(LAYER::GATE), 20, pg.x1, 995, pg.lx1, 1325);
+		}
+	}
+
+	// ---- 4b. li1 pin 67:16（sky130 惯例：信号 pin 在 li1；几何取自官方 sky130_fd_sc_hd__a21oi_1.lef 的 PIN RECT，nm） ----
+	{
+		struct LefPin { int x0, y0, x1, y1; };
+		LefPin pins[] = {
+			{ 850,  995, 1265, 1325},   // A1
+			{1035,  375, 1265,  995},   // A1
+			{1445,  995, 1740, 1325},   // A2
+			{  95,  675,  335, 1325},   // B1
+			{  95, 1495,  680, 1685},   // Y
+			{  95, 1685,  370, 2455},   // Y
+			{ 505,  645,  835,  825},   // Y
+			{ 505,  825,  680, 1495},   // Y
+			{ 610,  265,  835,  645},   // Y
+		};
+		for (auto& r : pins) {
+			// sky130 惯例：信号互连 = pin 区金属（li1）
+			draw_rect(out, static_cast<int>(LAYER::LIG), 20, r.x0, r.y0, r.x1, r.y1);
+		}
+	}
+	// li1 pin 标记 67:16：不是金属，是"pin 接入点"标注（EDA 提取 pin 连接时读它，位置必须在 67:20 金属内）
+	// sky130 惯例：标记数量/位置 = 该 pin 金属的可接入分段（A1 面积大 3 个、B1/Y 2 个、A2 1 个），取自官方版图
+	{
+		struct PinMark { int x0, y0, x1, y1; };
+		PinMark marks[] = {
+			{ 145,  765,  315,  935},   // B1 接入点 1
+			{ 145, 1105,  315, 1275},   // B1 接入点 2（栅接触旁）
+			{ 145, 1785,  315, 1955},   // Y 接入点 1（rail 列）
+			{ 145, 2125,  315, 2295},   // Y 接入点 2（rail 列）
+			{1065,  425, 1235,  595},   // A1 接入点 1
+			{1065,  765, 1235,  935},   // A1 接入点 2
+			{1065, 1105, 1235, 1275},   // A1 接入点 3
+			{1525, 1105, 1695, 1275},   // A2 接入点
+		};
+		for (auto& m : marks)
+			draw_rect(out, static_cast<int>(LAYER::LIG), 16, m.x0, m.y0, m.x1, m.y1);
+	}
+
+	// ---- 5. li1 电源轨 67:20（官方：VSS y[-85,815]，VDD y[2195,2805]） ----
+	draw_rect(out, static_cast<int>(LAYER::LIG), 20, 0, 2635, xr, 2805);
+	draw_rect(out, static_cast<int>(LAYER::LIG), 20, 1040, 2195, 1235, 2635);
+	draw_rect(out, static_cast<int>(LAYER::LIG), 20, 0, -85, xr, 85);
+	draw_rect(out, static_cast<int>(LAYER::LIG), 20, 110, 85, 440, 475);   // D0 下探（官方 VGND rect：y 仅到 475，给 B1 pin y675 让位）
+	draw_rect(out, static_cast<int>(LAYER::LIG), 20, 1445, 85, 1745, 815);
+
+	// ---- 6. 栅接触 66:44（中带 170×170；官方规律：接触 = landing 凸出 bbox 左缘 +50 起，宽 170 → cx = lx0+135） ----
+	for (int i = 0; i < num_gate; i++) {
+		int cx = sky130_polys[i].lx0 + 135;
+		draw_rect(out, static_cast<int>(LAYER::V0), 44, cx - v0_width / 2, 1075, cx + v0_width / 2, 1245);
+	}
+
+	// ---- 7. 电源轨 via 67:44（li1→M1，列中心 x = pitch×(i+0.5)） ----
+	for (int i = 0; i <= num_gate; i++) {
+		int cx = gate_pitch * (i + 1) - gate_pitch / 2;
+		draw_rect(out, static_cast<int>(LAYER::LIG), 44, cx - v0_width / 2, -v0_width / 2, cx + v0_width / 2, v0_width / 2);
+		draw_rect(out, static_cast<int>(LAYER::LIG), 44, cx - v0_width / 2, cell_height - v0_width / 2, cx + v0_width / 2, cell_height + v0_width / 2);
+		if (i == 0) {
+			// M1 电源轨 68:20（sky130：met1 rail，宽 0.48µm，中心在单元上下边界——相邻单元拼接成行电源主干）
+			draw_rect(out, static_cast<int>(LAYER::M1), 20, 0, -240, xr, 240);    // VSS rail（中心 y=0）
+			draw_rect(out, static_cast<int>(LAYER::M1), 20, 0, cell_height - 240, xr, cell_height + 240); // VDD rail（中心 y=cell_height）
+			// 电源 pin（sky130：M1 68:16，列1 rail 端，与官方位置一致）
+			draw_rect(out, static_cast<int>(LAYER::M1), 16, cx - v0_width / 2, -v0_width / 2, cx + v0_width / 2, v0_width / 2);   // VSS
+			draw_rect(out, static_cast<int>(LAYER::M1), 16, cx - v0_width / 2, cell_height - v0_width / 2, cx + v0_width / 2, cell_height + v0_width / 2); // VDD
+			// 标签层（官方有、物理无功能，补齐对齐层数）：122:16 = VSS pin 标记、64:16 = nwell pin 标记（VDD 侧）
+			draw_rect(out, 122, 16, cx - v0_width / 2, -v0_width / 2, cx + v0_width / 2, v0_width / 2);
+			draw_rect(out, static_cast<int>(LAYER::WELL), 16, cx - v0_width / 2, cell_height - v0_width / 2, cx + v0_width / 2, cell_height + v0_width / 2);
+		}
+	}
+
+	// ---- 8. diffusion 接触 66:44（170×170；拓扑沿用每列 diffusion 区；VDD 连接的 PMOS 接触落在轨内） ----
+	{
+		std::vector<std::string> pmos_diff, nmos_diff;
+		for (int i = 0; i < num_gate; i++) {
+			if (i == 0) {
+				pmos_diff.push_back(place_sol.pmos[i].left);
+				nmos_diff.push_back(place_sol.nmos[i].left);
+			}
+			if (i != num_gate - 1) {
+				std::string right_net;
+				right_net = (place_sol.pmos[i].right != "dummy") ? place_sol.pmos[i].right : place_sol.pmos[i + 1].left;
+				pmos_diff.push_back(right_net);
+				right_net = (place_sol.nmos[i].right != "dummy") ? place_sol.nmos[i].right : place_sol.nmos[i + 1].left;
+				nmos_diff.push_back(right_net);
+			} else {
+				pmos_diff.push_back(place_sol.pmos[i].right);
+				nmos_diff.push_back(place_sol.nmos[i].right);
+			}
+		}
+		// 泛化接触规则：net 在 diff 区出现 ≥2 次（VDD/VSS/输出/跨列节点）→ 画接触；
+		// 只出现 1 次 = 纯串联共享节点（如 sndA1），靠共享 diffusion 连通，官方不画接触
+		std::map<std::string, int> diff_net_cnt;
+		for (auto& ss : pmos_diff) if (ss != "dummy") diff_net_cnt[ss]++;
+		for (auto& ss : nmos_diff) if (ss != "dummy") diff_net_cnt[ss]++;
+
+		const int SD_MARGIN = 55;  // SD 接触到 poly 栅体边缘间距（nm，sky130 工艺）
+		int num_diff = pmos_diff.size();
+		for (int i = 0; i < num_diff; i++) {
+			// SD 接触 x：D0 = poly0 左缘 - 半宽 - 间距；间隙 = 相邻 poly 栅体间距中心；末端 = poly 末右缘 + 半宽 + 间距
+			int cx;
+			if (i == 0) cx = sky130_polys[0].x0 - v0_width / 2 - SD_MARGIN;
+			else if (i == num_diff - 1) cx = sky130_polys[num_gate - 1].x1 + v0_width / 2 + SD_MARGIN;
+			else cx = (sky130_polys[i - 1].x1 + sky130_polys[i].x0) / 2;
+			bool need_pm = (pmos_diff[i] != "dummy") && (diff_net_cnt[pmos_diff[i]] >= 2 || pmos_diff[i] == "VDD" || pmos_diff[i] == "VSS");
+			bool need_nm = (nmos_diff[i] != "dummy") && (diff_net_cnt[nmos_diff[i]] >= 2 || nmos_diff[i] == "VDD" || nmos_diff[i] == "VSS");
+			if (need_pm) {
+				if (pmos_diff[i] == "VDD") {
+					// VDD 列：单排高接触，落在 VPWR 下探区内（官方惯例 y[2275,2445]）
+					draw_rect(out, static_cast<int>(LAYER::V0), 44, cx - v0_width / 2, 2275, cx + v0_width / 2, 2445);
+				} else {
+					// 共享扩散区（列间同 net 连续，i∈[1,num_gate-1]）：高排（官方 pndA [1865,2035]+[2205,2375]，
+					// 让出下方 Y 金属通道，避免 li1 重叠）
+					// 单列区（首列左 / 末列右）：低排（官方 Y [1725,1895]+[2095,2265]）
+					if (i > 0 && i < num_gate) {
+						draw_rect(out, static_cast<int>(LAYER::V0), 44, cx - v0_width / 2, 1865, cx + v0_width / 2, 2035);
+						draw_rect(out, static_cast<int>(LAYER::V0), 44, cx - v0_width / 2, 2205, cx + v0_width / 2, 2375);
+					} else {
+						draw_rect(out, static_cast<int>(LAYER::V0), 44, cx - v0_width / 2, 1725, cx + v0_width / 2, 1895);
+						draw_rect(out, static_cast<int>(LAYER::V0), 44, cx - v0_width / 2, 2095, cx + v0_width / 2, 2265);
+					}
+				}
+			}
+			if (need_nm) {
+				if (i == 0 && nmos_diff[i] == "VSS") {
+					// 首列 VSS 接触：低排（官方 [295,465]，VGND 下探仅到 475，给 B1 pin 让位）
+					draw_rect(out, static_cast<int>(LAYER::V0), 44, cx - v0_width / 2, 295, cx + v0_width / 2, 465);
+				} else {
+					draw_rect(out, static_cast<int>(LAYER::V0), 44, cx - v0_width / 2, 445, cx + v0_width / 2, 615);
+				}
+			}
+		}
+	}
+
+	// ---- 8b. 跨列信号连接条（sky130 工艺：同 net 出现在不相邻列区 → li1 阶梯条连通，绕开中间电源列） ----
+	// 官方 a21oi_1 的 pndA 互连 = 左块(D1) + 底块(绕行通道) + 右块(D3)，中带凹口避开 VDD 下探（y 2195-2635）
+	// 泛化：左/右块 = 该 net 各列接触 bbox 外扩 85nm；底块 = 连通通道，y 上界 = 中间电源下探底 - 170（绕行安全）
+	{
+		const int SD_MARGIN = 55;   // sky130 SD 接触到 poly 栅体边缘间距（与第 8 段一致）
+		std::vector<std::string> pd, nd;
+		for (int i = 0; i < num_gate; i++) {
+			if (i == 0) { pd.push_back(place_sol.pmos[i].left); nd.push_back(place_sol.nmos[i].left); }
+			if (i != num_gate - 1) {
+				std::string rp = (place_sol.pmos[i].right != "dummy") ? place_sol.pmos[i].right : place_sol.pmos[i + 1].left;
+				pd.push_back(rp);
+				std::string rn = (place_sol.nmos[i].right != "dummy") ? place_sol.nmos[i].right : place_sol.nmos[i + 1].left;
+				nd.push_back(rn);
+			} else { pd.push_back(place_sol.pmos[i].right); nd.push_back(place_sol.nmos[i].right); }
+		}
+		// 各列区 cx（与 SD 接触段同一推导）
+		std::vector<int> diff_cx;
+		for (int i = 0; i < (int)pd.size(); i++) {
+			int cx;
+			if (i == 0) cx = sky130_polys[0].x0 - v0_width / 2 - SD_MARGIN;
+			else if (i == (int)pd.size() - 1) cx = sky130_polys[num_gate - 1].x1 + v0_width / 2 + SD_MARGIN;
+			else cx = (sky130_polys[i - 1].x1 + sky130_polys[i].x0) / 2;
+			diff_cx.push_back(cx);
+		}
+		std::map<std::string, std::vector<int>> pm_net_pos;
+		for (int i = 0; i < (int)pd.size(); i++)
+			if (pd[i] != "dummy" && pd[i] != "VDD" && pd[i] != "VSS") pm_net_pos[pd[i]].push_back(i);
+		for (auto& kv : pm_net_pos) {
+			if (kv.second.size() < 2) continue;   // 单列信号（Y 由 LEF 金属跨行连通）
+			auto& cols = kv.second;
+			int xl0 = diff_cx[cols.front()] - v0_width / 2 - 85;   // 左块左缘
+			int xl1 = diff_cx[cols.front()] + v0_width / 2 + 85;   // 左块右缘
+			int xr0 = diff_cx[cols.back()] - v0_width / 2 - 85;    // 右块左缘
+			int xr1 = diff_cx[cols.back()] + v0_width / 2 + 85;    // 右块右缘
+			int y_lo = 1725 - 85;                                  // 接触 y 下界外扩
+			int y_hi = 2265 + 85;                                  // 接触 y 上界外扩
+			int bypass_top = 2195 - 170;                           // 绕行通道 y 上界（VDD 下探底 2195 - 170）
+			// 左块 y 范围：首列若为共享扩散区（接触高排 [1865,2035]+[2205,2375]）→ [1780,2460]，
+			// 避开 LEF Y 金属 (y≤1685)；单列区（接触低排 [1725,1895]+[2095,2265]）→ [1640,2350]
+			bool front_shared = (cols.front() > 0 && cols.front() < num_gate);
+			int left_y_lo = front_shared ? 1865 - 85 : y_lo;
+			int left_y_hi = front_shared ? 2375 + 85 : y_hi;
+			draw_rect(out, static_cast<int>(LAYER::LIG), 20, xl0, left_y_lo, xl1, left_y_hi);   // 左块（覆盖首列接触）
+			draw_rect(out, static_cast<int>(LAYER::LIG), 20, xl1, y_lo, xr0, bypass_top);      // 底块（绕行通道）
+			draw_rect(out, static_cast<int>(LAYER::LIG), 20, xr0, y_lo, xr1, y_hi);            // 右块（覆盖末列接触）
+		}
+	}
 
 	std::vector<int> track_y;
 	track_y.push_back(cell_height - active_unit - m1_width / 2);
@@ -2979,31 +2499,6 @@ void Router::generate_ascii(std::ofstream &out, std::string cell_name) {
 	track_y.push_back(active_unit + m1_width / 2);
 	
 
-	// Draw VDD, VSS M1
-	// LIG in power rails
-	out << "BOUNDARY;" << std::endl;
-	out << "LAYER " << static_cast<int>(LAYER::M1) << ";" << std::endl;
-	out << "DATATYPE 0;" << std::endl;
-	out << "XY 5;" << std::endl;
-	out << " X: " << 0 << ";		 Y: " << (-m1_width / 2) * 4 << ";" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: " << (-m1_width / 2) * 4 << ";" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: " << (m1_width / 2) * 4 << ";" << std::endl;
-	out << " X: " << 0 << ";		 Y: " << (m1_width / 2) * 4 << ";" << std::endl;
-	out << " X: " << 0 << ";		 Y: " << (-m1_width / 2) * 4 << ";" << std::endl;
-	out << "ENDEL;" << std::endl << std::endl;
-
-	out << "BOUNDARY;" << std::endl;
-	out << "LAYER " << static_cast<int>(LAYER::M1) << ";" << std::endl;
-	out << "DATATYPE 0;" << std::endl;
-	out << "XY 5;" << std::endl;
-	out << " X: " << 0 << ";		 Y: " << (cell_height - m1_width / 2) * 4 << ";" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: " << (cell_height - m1_width / 2) * 4 << ";" << std::endl;
-	out << " X: " << x_right_boundary * 4 << ";		 Y: " << (cell_height + m1_width / 2) * 4 << ";" << std::endl;
-	out << " X: " << 0 << ";		 Y: " << (cell_height + m1_width / 2) * 4 << ";" << std::endl;
-	out << " X: " << 0 << ";		 Y: " << (cell_height - m1_width / 2) * 4 << ";" << std::endl;
-	out << "ENDEL;" << std::endl << std::endl;
-
-
 	// Print nets
 	for (auto& it : routing_result) {
 		std::string net_name = it.first;
@@ -3011,331 +2506,20 @@ void Router::generate_ascii(std::ofstream &out, std::string cell_name) {
 
 		if (net_name == "overall") continue;
 
-		// I/O pin?
-		if (route->is_IO) {
-			int y = 2;
-			bool is_printed = false;
-			for (int x = 0; x < col_size; x++) {
-				if (route->via_grid[0][y][x] == 1) {
-					int cy = track_y[y];
-					int cx = gate_pitch / 2 * (x + 1);
-
-					assert(route->metal_grid[0][y][x] == 1);
-
-					// Draw V0
-					out << "BOUNDARY;" << std::endl;
-					out << "LAYER " << static_cast<int>(LAYER::V0) << ";" << std::endl;
-					out << "DATATYPE 0;" << std::endl;
-					out << "XY 5;" << std::endl;
-					out << " X: " << (cx - v0_width / 2) * 4 << ";		 Y: " << (cy + v0_width / 2) * 4 << ";" << std::endl;
-					out << " X: " << (cx + v0_width / 2) * 4 << ";		 Y: " << (cy + v0_width / 2) * 4 << ";" << std::endl;
-					out << " X: " << (cx + v0_width / 2) * 4 << ";		 Y: " << (cy - v0_width / 2) * 4 << ";" << std::endl;
-					out << " X: " << (cx - v0_width / 2) * 4 << ";		 Y: " << (cy - v0_width / 2) * 4 << ";" << std::endl;
-					out << " X: " << (cx - v0_width / 2) * 4 << ";		 Y: " << (cy + v0_width / 2) * 4 << ";" << std::endl;
-					out << "ENDEL;" << std::endl << std::endl;
-
-					int io_pin_height_half = track_y[1] - track_y[2] - m1_width / 2 - m1_t2s;
-
-					int io_pin_height_top = io_pin_height_half;
-					int io_pin_height_bot = io_pin_height_half;
-
-					if (routing_result["overall"]->metal_grid[0][1][x] == 0) {
-						if (x > 0 && routing_result["overall"]->metal_grid[0][1][x - 1] == 0) {
-							if (x < col_size - 1 && routing_result["overall"]->metal_grid[0][1][x + 1] == 0) {
-								io_pin_height_top += m1_pitch;
-								if (routing_result["overall"]->metal_grid[0][0][x] == 0) {
-									if (x > 0 && routing_result["overall"]->metal_grid[0][0][x - 1] == 0) {
-										if (x < col_size - 1 && routing_result["overall"]->metal_grid[0][0][x + 1] == 0) {
-											io_pin_height_top += m1_pitch;
-										}
-									}
-								}
-							}
-						}
-					}
-
-					if (routing_result["overall"]->metal_grid[0][3][x] == 0) {
-						if (x > 0 && routing_result["overall"]->metal_grid[0][3][x - 1] == 0) {
-							if (x < col_size - 1 && routing_result["overall"]->metal_grid[0][3][x + 1] == 0) {
-								io_pin_height_bot += m1_pitch;
-								if (routing_result["overall"]->metal_grid[0][4][x] == 0) {
-									if (x > 0 && routing_result["overall"]->metal_grid[0][4][x - 1] == 0) {
-										if (x < col_size - 1 && routing_result["overall"]->metal_grid[0][4][x + 1] == 0) {
-											io_pin_height_bot += m1_pitch;
-										}
-									}
-								}
-							}
-						}
-					}
-
-
-					/*
-					if (routing_result["overall"]->metal_grid[0][1][x] == 0) {
-						io_pin_height_top += m1_pitch;
-						if (routing_result["overall"]->metal_grid[0][0][x] == 0) io_pin_height_top += m1_pitch;
-					}
-					if (routing_result["overall"]->metal_grid[0][3][x] == 0) {
-						io_pin_height_bot += m1_pitch;
-						if (routing_result["overall"]->metal_grid[0][4][x] == 0) io_pin_height_bot += m1_pitch;
-					}*/
-
-
-					// Draw I/O pin
-					out << "BOUNDARY;" << std::endl;
-					out << "LAYER " << static_cast<int>(LAYER::M1) << ";" << std::endl;
-					out << "DATATYPE 0;" << std::endl;
-					out << "XY 5;" << std::endl;
-					out << " X: " << (cx - m1_width / 2) * 4 << ";		 Y: " << (cy + io_pin_height_top) * 4 << ";" << std::endl;
-					out << " X: " << (cx + m1_width / 2) * 4 << ";		 Y: " << (cy + io_pin_height_top) * 4 << ";" << std::endl;
-					out << " X: " << (cx + m1_width / 2) * 4 << ";		 Y: " << (cy - io_pin_height_bot) * 4 << ";" << std::endl;
-					out << " X: " << (cx - m1_width / 2) * 4 << ";		 Y: " << (cy - io_pin_height_bot) * 4 << ";" << std::endl;
-					out << " X: " << (cx - m1_width / 2) * 4 << ";		 Y: " << (cy + io_pin_height_top) * 4 << ";" << std::endl;
-					out << "ENDEL;" << std::endl << std::endl;
-
-				}
-			}
-		}
-
 		// not I/O pin
 		else {
-			// draw V0 & V1
-			for (int y = 0; y < row_size; y++) {
-				for (int x = 0; x < col_size; x++) {
-					if (route->via_grid[0][y][x] == 1) {
-						int cy = track_y[y];
-						int cx = gate_pitch / 2 * (x + 1);
+			// sky130 互连模型：li1 金属 = 电源轨 + LEF pin 区 + 接触覆盖（金属填充）。
+			// 网格路径画法是 ASAP7 长互连模型，sky130 单元内互连是短金属片，无需路径形状；
+			// z3 仍求解并验证连通（SAT），仅不再绘制路径。
+			continue;
+		}
 
-						out << "BOUNDARY;" << std::endl;
-						out << "LAYER " << static_cast<int>(LAYER::V0) << ";" << std::endl;
-						out << "DATATYPE 0;" << std::endl;
-						out << "XY 5;" << std::endl;
-						out << " X: " << (cx - v0_width / 2) * 4 << ";		 Y: " << (cy + v0_width / 2) * 4 << ";" << std::endl;
-						out << " X: " << (cx + v0_width / 2) * 4 << ";		 Y: " << (cy + v0_width / 2) * 4 << ";" << std::endl;
-						out << " X: " << (cx + v0_width / 2) * 4 << ";		 Y: " << (cy - v0_width / 2) * 4 << ";" << std::endl;
-						out << " X: " << (cx - v0_width / 2) * 4 << ";		 Y: " << (cy - v0_width / 2) * 4 << ";" << std::endl;
-						out << " X: " << (cx - v0_width / 2) * 4 << ";		 Y: " << (cy + v0_width / 2) * 4 << ";" << std::endl;
-						out << "ENDEL;" << std::endl << std::endl;
-					}
-					if (route->via_grid[1][y][x] == 1) {
-						int cy = track_y[y];
-						int cx = gate_pitch / 2 * (x + 1);
-
-						out << "BOUNDARY;" << std::endl;
-						out << "LAYER " << static_cast<int>(LAYER::V1) << ";" << std::endl;
-						out << "DATATYPE 0;" << std::endl;
-						out << "XY 5;" << std::endl;
-						out << " X: " << (cx - v0_width / 2) * 4 << ";		 Y: " << (cy + v0_width / 2) * 4 << ";" << std::endl;
-						out << " X: " << (cx + v0_width / 2) * 4 << ";		 Y: " << (cy + v0_width / 2) * 4 << ";" << std::endl;
-						out << " X: " << (cx + v0_width / 2) * 4 << ";		 Y: " << (cy - v0_width / 2) * 4 << ";" << std::endl;
-						out << " X: " << (cx - v0_width / 2) * 4 << ";		 Y: " << (cy - v0_width / 2) * 4 << ";" << std::endl;
-						out << " X: " << (cx - v0_width / 2) * 4 << ";		 Y: " << (cy + v0_width / 2) * 4 << ";" << std::endl;
-						out << "ENDEL;" << std::endl << std::endl;
-
-					}
-				}
-			}
-
-			// draw M1
+			// draw M2
 			// Find metal component through DFS
 			std::vector<std::vector<bool>> explored;
 			explored.resize(row_size);
 			for (int i = 0; i < row_size; i++) {
 				explored[i].resize(col_size);
-				for (int j = 0; j < col_size; j++) explored[i][j] = false;
-			}
-
-			for (int y = 0; y < row_size; y++) {
-				for (int x = 0; x < col_size; x++) {
-					if (route->metal_grid[0][y][x] == 1 && !explored[y][x]) {
-						
-						std::vector<Point> component_points;
-
-						// Find connected components
-						DFS_Metal(route, component_points, y, x, explored, 0);
-						
-						// Find boundary points
-						std::vector<std::tuple<Point, bool, bool, bool, bool>> boundary_points;
-						for (auto& point : component_points) {
-							// hor, ver both exist or only one direction
-
-							bool left =  (point.x > 0 && route->hor_grid[0][point.y][point.x - 1] == 1) ? true : false; 
-							bool right = (point.x < col_size - 1 && route->hor_grid[0][point.y][point.x] == 1) ? true : false;
-							bool up = (point.y > 0 && route->ver_grid[0][point.y - 1][point.x] == 1) ? true : false;
-							bool down = (point.y < row_size - 1 && route->ver_grid[0][point.y][point.x] == 1) ? true : false;
-
-							int cy = track_y[point.y];
-							int cx = gate_pitch / 2 * (point.x + 1);
-
-							assert(left || right || up || down);
-
-							int hor_dir = 0, ver_dir = 0;
-							if (left) hor_dir++;
-							if (right) hor_dir++;
-							if (up) ver_dir++;
-							if (down) ver_dir++;
-
-							if (!((hor_dir > 0 && ver_dir > 0) || hor_dir + ver_dir == 1)) continue;
-
-							// End point	
-							if (left && !right && !up && !down) {
-								boundary_points.push_back(std::make_tuple(Point(cy - m1_width / 2, cx + m1_width / 2 + m1_v0_ex), true, false, true, false));
-								boundary_points.push_back(std::make_tuple(Point(cy + m1_width / 2, cx + m1_width / 2 + m1_v0_ex), true, false, false, true));
-							}
-							else if (!left && right && !up  && !down) {
-								boundary_points.push_back(std::make_tuple(Point(cy - m1_width / 2, cx - m1_width / 2 - m1_v0_ex), false, true, true, false));
-								boundary_points.push_back(std::make_tuple(Point(cy + m1_width / 2, cx - m1_width / 2 - m1_v0_ex), false, true, false, true));
-							}
-							else if (!left && !right && up && !down) {
-								boundary_points.push_back(std::make_tuple(Point(cy - m1_width / 2 - m1_v0_ex, cx - m1_width / 2), false, true, true, false));
-								boundary_points.push_back(std::make_tuple(Point(cy - m1_width / 2 - m1_v0_ex, cx + m1_width / 2), true, false, true, false));
-							}
-							else if (!left && !right && !up && down) {
-								boundary_points.push_back(std::make_tuple(Point(cy + m1_width / 2 + m1_v0_ex, cx - m1_width / 2), false, true, false, true));
-								boundary_points.push_back(std::make_tuple(Point(cy + m1_width / 2 + m1_v0_ex, cx + m1_width / 2), true, false, false, true));
-							}						
-						
-							// two-direction points
-							else if (left && !right && up && !down) {
-								boundary_points.push_back(std::make_tuple(Point(cy + m1_width / 2, cx - m1_width / 2), true, false, true, false));
-								boundary_points.push_back(std::make_tuple(Point(cy - m1_width / 2, cx + m1_width / 2), true, false, true, false));
-							}
-							else if (!left && right && up && !down) {
-								boundary_points.push_back(std::make_tuple(Point(cy + m1_width / 2, cx + m1_width / 2), false, true, true, false));
-								boundary_points.push_back(std::make_tuple(Point(cy - m1_width / 2, cx - m1_width / 2), false, true, true, false));
-							}
-							else if (left && !right && !up && down) {
-								boundary_points.push_back(std::make_tuple(Point(cy + m1_width / 2, cx + m1_width / 2), true, false, false, true));
-								boundary_points.push_back(std::make_tuple(Point(cy - m1_width / 2, cx - m1_width / 2), true, false, false, true));
-							}
-							else if (!left && right && !up && down) {
-								boundary_points.push_back(std::make_tuple(Point(cy + m1_width / 2, cx - m1_width / 2), false, true, false, true));
-								boundary_points.push_back(std::make_tuple(Point(cy - m1_width / 2, cx + m1_width / 2), false, true, false, true));
-							}
-
-							// three-direction points
-							else if (left && right && up && !down) {
-								boundary_points.push_back(std::make_tuple(Point(cy + m1_width / 2, cx - m1_width / 2), true, false, true, false));
-								boundary_points.push_back(std::make_tuple(Point(cy + m1_width / 2, cx + m1_width / 2), false, true, true, false));
-							}
-							else if (!left && right && up && down) {
-								boundary_points.push_back(std::make_tuple(Point(cy - m1_width / 2, cx + m1_width / 2), false, true, false, true));
-								boundary_points.push_back(std::make_tuple(Point(cy + m1_width / 2, cx + m1_width / 2), false, true, true, false));
-							}
-							else if (left && right && !up && down) {
-								boundary_points.push_back(std::make_tuple(Point(cy - m1_width / 2, cx - m1_width / 2), true, false, false, true));
-								boundary_points.push_back(std::make_tuple(Point(cy - m1_width / 2, cx + m1_width / 2), false, true, false, true));
-							}
-							else if (left && !right && up && down) {
-								boundary_points.push_back(std::make_tuple(Point(cy - m1_width / 2, cx - m1_width / 2), true, false, false, true));
-								boundary_points.push_back(std::make_tuple(Point(cy + m1_width / 2, cx - m1_width / 2), true, false, true, false));
-							}
-
-							// four-direction points
-							else if (left && right && up && down) {
-								boundary_points.push_back(std::make_tuple(Point(cy - m1_width / 2, cx - m1_width / 2), true, false, false, true));
-								boundary_points.push_back(std::make_tuple(Point(cy + m1_width / 2, cx - m1_width / 2), true, false, true, false));
-								boundary_points.push_back(std::make_tuple(Point(cy - m1_width / 2, cx + m1_width / 2), false, true, false, true));
-								boundary_points.push_back(std::make_tuple(Point(cy + m1_width / 2, cx + m1_width / 2), false, true, true, false));
-			
-							}
-						}
-
-						// Circulate
-						std::vector<Point> cir_boundary;
-						cir_boundary.push_back(std::get<0>(boundary_points[0]));
-						
-						// Left, Right, Up, Down
-						int to_direction = (std::get<1>(boundary_points[0])) ? 0 : ((std::get<2>(boundary_points[0])) ? 1 : 2);
-
-						Point previous_point = std::get<0>(boundary_points[0]);
-
-						int n_boundary_points = boundary_points.size();
-						std::vector<bool> visited(n_boundary_points, false);
-						
-						for (int i = 0; i < n_boundary_points; i++) {
-							// Find next point index
-
-							int next_pt_idx = -1;
-							int dist = 99999999;
-							for (int j = 0; j < n_boundary_points; j++) {
-								auto& next_cand_point = std::get<0>(boundary_points[j]);
-
-								if (visited[j]) continue;
-								if (to_direction == 0 && previous_point.x > next_cand_point.x && previous_point.y == next_cand_point.y) {
-									if (dist > std::abs(previous_point.x - next_cand_point.x)) {
-										dist = std::abs(previous_point.x - next_cand_point.x);
-										next_pt_idx = j;
-									}									
-								}
-								if (to_direction == 1 && previous_point.x < next_cand_point.x && previous_point.y == next_cand_point.y) {
-									if (dist > std::abs(previous_point.x - next_cand_point.x)) {
-										dist = std::abs(previous_point.x - next_cand_point.x);
-										next_pt_idx = j;
-									}									
-								}
-								if (to_direction == 2 && previous_point.y < next_cand_point.y && previous_point.x == next_cand_point.x) {
-									if (dist > std::abs(previous_point.y - next_cand_point.y)) {
-										dist = std::abs(previous_point.y - next_cand_point.y);
-										next_pt_idx = j;
-									}													
-								}
-								if (to_direction == 3 && previous_point.y > next_cand_point.y && previous_point.x == next_cand_point.x) {
-									if (dist > std::abs(previous_point.y - next_cand_point.y)) {
-										dist = std::abs(previous_point.y - next_cand_point.y);
-										next_pt_idx = j;
-									}													
-								}
-							}
-
-							if (next_pt_idx == -1) {
-								std::cout << "Cannot find next points" << std::endl;
-								exit(0);
-							}
-							cir_boundary.push_back(std::get<0>(boundary_points[next_pt_idx]));
-							visited[next_pt_idx] = true;
-						
-							previous_point = std::get<0>(boundary_points[next_pt_idx]);
-							if (to_direction == 0 || to_direction == 1) {
-								if (std::get<3>(boundary_points[next_pt_idx])) to_direction = 2;
-								else if (std::get<4>(boundary_points[next_pt_idx])) to_direction = 3;
-								else {
-									std::cout << "Direction Error!" << std::endl;
-									exit(0);
-								}
-							}
-							else if (to_direction == 2 || to_direction == 3) {
-								if (std::get<1>(boundary_points[next_pt_idx])) to_direction = 0;
-								else if (std::get<2>(boundary_points[next_pt_idx])) to_direction = 1;
-								else {
-									std::cout << "Direction Error!" << std::endl;
-									exit(0);
-								}
-							}
-							else {
-								std::cout << "Direction Out of bound!" << std::endl;
-								exit(0);
-							}
-						
-						}
-
-						// Draw M1
-
-						out << "BOUNDARY;" << std::endl;
-						out << "LAYER " << static_cast<int>(LAYER::M1) << ";" << std::endl;
-						out << "DATATYPE 0;" << std::endl;
-						out << "XY "<< static_cast<int>(cir_boundary.size()) << " ;" << std::endl;
-						for (int i = 0; i < cir_boundary.size(); i++) {
-							out << " X: " << cir_boundary[i].x * 4 << ";		 Y: " << cir_boundary[i].y * 4 << ";" << std::endl;
-						}
-						out << "ENDEL;" << std::endl << std::endl;
-					}
-				}
-			}
-
-			// draw M2
-			// Find metal component through DFS
-			for (int i = 0; i < row_size; i++) {
 				for (int j = 0; j < col_size; j++) explored[i][j] = false;
 			}
 
@@ -3517,7 +2701,7 @@ void Router::generate_ascii(std::ofstream &out, std::string cell_name) {
 
 						out << "BOUNDARY;" << std::endl;
 						out << "LAYER " << static_cast<int>(LAYER::M2) << ";" << std::endl;
-						out << "DATATYPE 0;" << std::endl;
+						out << "DATATYPE 20;" << std::endl;
 						out << "XY "<< static_cast<int>(cir_boundary.size()) << " ;" << std::endl;
 						for (int i = 0; i < cir_boundary.size(); i++) {
 							out << " X: " << cir_boundary[i].x * 4 << ";		 Y: " << cir_boundary[i].y * 4 << ";" << std::endl;
@@ -3527,7 +2711,6 @@ void Router::generate_ascii(std::ofstream &out, std::string cell_name) {
 				}
 			}
 		}
-	}
 
 	// Print I/O pin text
 	for (auto& net : cell.IOnets) {

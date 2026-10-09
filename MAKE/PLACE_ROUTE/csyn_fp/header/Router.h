@@ -8,11 +8,22 @@
 #include "RoutingResult.h"
 
 enum class routing_direction {BOTH, HOR, VER};
-enum class ASAP_DR { GATE_PITCH = 54, GATE_WIDTH = 20, CELL_HEIGHT = 270, GATE_TIP_VER = 5, GCUT_HEIGHT = 44,
-                     FIN_HEIGHT = 7, FIN_SPACING = 20, ACTIVE_UNIT = 27, MIN_ACTIVE_HEIGHT = 25, SDT_WIDTH = 24, LISD_WIDTH = 24,
-                     LIG_PWR_HEIGHT = 16, LIG_CENTER_HEIGHT = 22, LIG_GATE = 1, V0_WIDTH = 18, M1_WIDTH = 18, M1_PITCH = 36, M1_V0_EX = 5, M1_T2T = 31, M1_T2S = 25};
-enum class LAYER { WELL = 1, NSELECT = 12, PSELECT = 13, BOUNDARY = 100, P_SUB = 3, GATE = 7, GCUT = 10, FIN = 2, ACTIVE = 11, 
-                   SDT = 88, LISD = 17, LIG = 16, V0 = 18, M1 = 19, V1 = 21, M2 = 20 };
+// === sky130_fd_sc_hd 版图常量（官方 GDS 实测 / tech LEF，单位 nm）===
+// GATE_TIP_VER = poly 距上下轨边距（官方 poly y 105..2615）
+// MIN_ACTIVE_HEIGHT = diff 超出最外栅的 x 向余量（≈265）
+// LISD_WIDTH / V0_WIDTH = li1 最小线宽 170nm；LIG_CENTER 为栅接触条（官方 y 995..1325）
+// 电源轨：VSS y[-85,815]，VDD y[2195,2805]（官方实测，轨高不对称）
+enum class ASAP_DR { GATE_PITCH = 460, GATE_WIDTH = 150, CELL_HEIGHT = 2720, GATE_TIP_VER = 105, GCUT_HEIGHT = 0,
+                     FIN_HEIGHT = 0, FIN_SPACING = 0, ACTIVE_UNIT = 10, MIN_ACTIVE_HEIGHT = 265, SDT_WIDTH = 0, LISD_WIDTH = 170,
+                     LIG_PWR_HEIGHT = 900, LIG_CENTER_HEIGHT = 330, LIG_GATE = 10, V0_WIDTH = 170, M1_WIDTH = 140, M1_PITCH = 340, M1_V0_EX = 30, M1_T2T = 140, M1_T2S = 140};
+// === sky130 GDS 层号映射（layer : datatype，见 sky130 层表实测）===
+// WELL=64:20 nwell / NSELECT=93:44 nsdm / PSELECT=94:20 psdm / BOUNDARY=236:0 prBndry
+// GATE=66:20 poly / ACTIVE=65:20 diff / LISD=LIG=LI1=67:20 li1 / V0=66:44 li1接触(栅+SD同层)
+// M1=68:20 met1 / V1=69:44 via2(met1-met2) / M2=69:20 met2 / VIA_LI1_M1=68:44 via(li1-met1)
+// HVTP=78:44 / LVTN=125:44 / NPC=95:20
+enum class LAYER { WELL = 64, NSELECT = 93, PSELECT = 94, BOUNDARY = 236, P_SUB = 64, GATE = 66, GCUT = 0, FIN = 0, ACTIVE = 65,
+                   SDT = 0, LISD = 67, LIG = 67, V0 = 66, M1 = 68, V1 = 69, M2 = 69, LI1 = 67, VIA_LI1_M1 = 68, VIA_M1_M2 = 69,
+                   HVTP = 78, LVTN = 125, NPC = 95 };
 
 class Router {
 public:

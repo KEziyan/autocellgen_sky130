@@ -71,7 +71,7 @@ public:
 class Transistor {
 public:
     Transistor() { name = "null"; }
-    Transistor(transtype t) : name("null"), source("null"), drain("null"), gate("null"), contact("null"), type(t), width(0), length(0), nfin(0) {}
+    Transistor(transtype t) : name("null"), source("null"), drain("null"), gate("null"), contact("null"), type(t), width(0), length(0), nfin(0), vt_flavor("svt") {}
     Transistor(const std::vector<std::string>& tokens);
 
     friend std::ostream& operator<<(std::ostream& os, const Transistor& t);
@@ -81,6 +81,8 @@ public:
     transtype type;
     double width, length;
     int nfin;
+    // sky130: svt / lvt / hvt（用于阈值电压注入层 hvtp/lvtn 绘制）
+    std::string vt_flavor;
 };
 
 class Cell {

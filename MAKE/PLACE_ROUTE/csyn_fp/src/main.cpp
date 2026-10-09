@@ -207,7 +207,7 @@ int main(int argc, char **argv) {
             auto start = std::chrono::steady_clock::now();
             placer.run();
             auto end = std::chrono::steady_clock::now();
-            out << "Min #CPP = " << placer.min_width + 2 << std::endl;
+            out << "Min #CPP = " << placer.min_width << std::endl;
             //out << "The number of solutions = " << placer.solutions.size() << std::endl;
             out << "Placement time : " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << "ms" << std::endl;
             std::vector<int> group_pair(placer.numGroup, 0);
@@ -231,7 +231,7 @@ int main(int argc, char **argv) {
                     auto& w_solutions = placer.solutions[width];
                     int num_sol = w_solutions.size();
                     for (int k = 0; k < num_sol; k++) {
-                        std::string output_file_name = "w" + std::to_string(width + 2);
+                        std::string output_file_name = "w" + std::to_string(width);
                         fs::path output_file_path = cell_output_path / fs::path(output_file_name);  
                         fs::create_directories(output_file_path);
 
@@ -258,16 +258,16 @@ int main(int argc, char **argv) {
                     for (int k = 0; k < setting.routeSolutions; k++) {
                         //if (k >= setting.numSolutions) break;
 						if (k >= num_sol) break;
-                        std::cout << "Routing for solution " << k << " of width " << width + 2 << std::endl;
+                        std::cout << "Routing for solution " << k << " of width " << width << std::endl;
 
-                        std::string output_file_name = temp.name + "_w" + std::to_string(width + 2) + "_" + std::to_string(k) + ".txt";
+                        std::string output_file_name = temp.name + "_w" + std::to_string(width) + "_" + std::to_string(k) + ".txt";
                         fs::path output_file_path = cell_route_path / fs::path(output_file_name);
 
                         Router router(l.cells[i], w_solutions[k]);
                         router.routing(output_file_path);
 
                         if (router.is_routable == false) {
-                            out << "Width " << width + 2 << ", Solution " << k << " (Cost = " << w_solutions[k].cost  << "): Unroutable, Routing time: " << router.runtime << "ms" << std::endl;
+                            out << "Width " << width << ", Solution " << k << " (Cost = " << w_solutions[k].cost  << "): Unroutable, Routing time: " << router.runtime << "ms" << std::endl;
                             out << "[NOR_HPWL=" << w_solutions[k].nor_hpwl << ", MAX_H_GRID=" << w_solutions[k].max_h_grid << ", MAX_V_GRID=" << w_solutions[k].max_v_grid << ", MAX_H_COLUMN=" << w_solutions[k].max_h_column << ", MAX_V_COLUMN=" << w_solutions[k].max_v_column << ", MAX_H_ROW=" << w_solutions[k].max_h_row << ", MAX_V_ROW=" << w_solutions[k].max_v_row << std::endl << std::endl;
                             //continue;
                         } 
@@ -277,7 +277,7 @@ int main(int argc, char **argv) {
                             min_m2_usage = 0;
                             curw_best_gds_path = output_file_path.replace_extension(fs::path(".gds"));
                             runtime = router.runtime;
-                            out << "Width " << width + 2 << ", Solution " << k << " (Cost = " << w_solutions[k].cost  << "): M1 routable, Routing time: " << router.runtime << "ms" << std::endl;
+                            out << "Width " << width << ", Solution " << k << " (Cost = " << w_solutions[k].cost  << "): M1 routable, Routing time: " << router.runtime << "ms" << std::endl;
                             out << "[NOR_HPWL=" << w_solutions[k].nor_hpwl << ", MAX_H_GRID=" << w_solutions[k].max_h_grid << ", MAX_V_GRID=" << w_solutions[k].max_v_grid << ", MAX_H_COLUMN=" << w_solutions[k].max_h_column << ", MAX_V_COLUMN=" << w_solutions[k].max_v_column << ", MAX_H_ROW=" << w_solutions[k].max_h_row << ", MAX_V_ROW=" << w_solutions[k].max_v_row << std::endl << std::endl;
                             break;
                         }
@@ -288,7 +288,7 @@ int main(int argc, char **argv) {
                                 runtime = router.runtime;
                                 curw_best_gds_path = output_file_path.replace_extension(fs::path(".gds"));
                             }
-                            out << "Width " << width + 2 << ", Solution " << k << " (Cost = " << w_solutions[k].cost  << "): M2 routable (Usage " << router.m2_usage << "), Routing time: " << router.runtime << "ms" << std::endl;
+                            out << "Width " << width << ", Solution " << k << " (Cost = " << w_solutions[k].cost  << "): M2 routable (Usage " << router.m2_usage << "), Routing time: " << router.runtime << "ms" << std::endl;
                             out << "[NOR_HPWL=" << w_solutions[k].nor_hpwl << ", MAX_H_GRID=" << w_solutions[k].max_h_grid << ", MAX_V_GRID=" << w_solutions[k].max_v_grid << ", MAX_H_COLUMN=" << w_solutions[k].max_h_column << ", MAX_V_COLUMN=" << w_solutions[k].max_v_column << ", MAX_H_ROW=" << w_solutions[k].max_h_row << ", MAX_V_ROW=" << w_solutions[k].max_v_row << std::endl << std::endl;
 
                         }
@@ -313,7 +313,7 @@ int main(int argc, char **argv) {
             auto start = std::chrono::steady_clock::now();
             placer.run();
             auto end = std::chrono::steady_clock::now();
-            out << "Min #CPP = " << placer.min_width + 2 << std::endl;
+            out << "Min #CPP = " << placer.min_width << std::endl;
             //out << "The number of solutions = " << placer.solutions.size() << std::endl;
             out << "Placement time : " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << "ms" << std::endl;
             //out << std::endl;
@@ -329,7 +329,7 @@ int main(int argc, char **argv) {
                     auto& w_solutions = placer.solutions[width];
                     int num_sol = w_solutions.size();
                     for (int k = 0; k < num_sol; k++) {
-                        std::string output_file_name = "w" + std::to_string(width + 2);
+                        std::string output_file_name = "w" + std::to_string(width);
                         fs::path output_file_path = cell_output_path / fs::path(output_file_name);  
                         fs::create_directories(output_file_path);
 
@@ -358,9 +358,9 @@ int main(int argc, char **argv) {
 						if (k >= num_sol) break;
                         //if (k >= setting.numSolutions) break;
 
-                        std::cout << "Routing for solution " << k << " of width " << width + 2 << std::endl;
+                        std::cout << "Routing for solution " << k << " of width " << width << std::endl;
 
-                        std::string output_file_name = temp.name + "_w" + std::to_string(width + 2) + "_" + std::to_string(k) + ".txt";
+                        std::string output_file_name = temp.name + "_w" + std::to_string(width) + "_" + std::to_string(k) + ".txt";
                         fs::path output_file_path = cell_route_path / fs::path(output_file_name);
 
                         Router router(l.cells[i], w_solutions[k]);
@@ -368,7 +368,7 @@ int main(int argc, char **argv) {
                         std::cout << router.is_routable << std::endl;
 
                         if (router.is_routable == false) {
-                            out << "Width " << width + 2 << ", Solution " << k << " (Cost = " << w_solutions[k].cost  << "): Unroutable, Routing time: " << router.runtime << "ms" << std::endl;
+                            out << "Width " << width << ", Solution " << k << " (Cost = " << w_solutions[k].cost  << "): Unroutable, Routing time: " << router.runtime << "ms" << std::endl;
                             out << "[NOR_HPWL=" << w_solutions[k].nor_hpwl << ", MAX_H_GRID=" << w_solutions[k].max_h_grid << ", MAX_V_GRID=" << w_solutions[k].max_v_grid << ", MAX_H_COLUMN=" << w_solutions[k].max_h_column << ", MAX_V_COLUMN=" << w_solutions[k].max_v_column << ", MAX_H_ROW=" << w_solutions[k].max_h_row << ", MAX_V_ROW=" << w_solutions[k].max_v_row << std::endl << std::endl;
                             //continue;
                         } 
@@ -379,7 +379,7 @@ int main(int argc, char **argv) {
                             min_m2_usage = 0;
                             curw_best_gds_path = output_file_path.replace_extension(fs::path(".gds"));
                             runtime = router.runtime;
-                            out << "Width " << width + 2 << ", Solution " << k << " (Cost = " << w_solutions[k].cost  << "): M1 routable, Routing time: " << router.runtime << "ms" << std::endl;
+                            out << "Width " << width << ", Solution " << k << " (Cost = " << w_solutions[k].cost  << "): M1 routable, Routing time: " << router.runtime << "ms" << std::endl;
                             out << "[NOR_HPWL=" << w_solutions[k].nor_hpwl << ", MAX_H_GRID=" << w_solutions[k].max_h_grid << ", MAX_V_GRID=" << w_solutions[k].max_v_grid << ", MAX_H_COLUMN=" << w_solutions[k].max_h_column << ", MAX_V_COLUMN=" << w_solutions[k].max_v_column << ", MAX_H_ROW=" << w_solutions[k].max_h_row << ", MAX_V_ROW=" << w_solutions[k].max_v_row << std::endl << std::endl;
                             break;
                         }
@@ -390,7 +390,7 @@ int main(int argc, char **argv) {
                                 runtime = router.runtime;
                                 curw_best_gds_path = output_file_path.replace_extension(fs::path(".gds"));
                             }
-                            out << "Width " << width + 2 << ", Solution " << k << " (Cost = " << w_solutions[k].cost  << "): M2 routable (Usage " << router.m2_usage << "), Routing time: " << router.runtime << "ms" << std::endl;
+                            out << "Width " << width << ", Solution " << k << " (Cost = " << w_solutions[k].cost  << "): M2 routable (Usage " << router.m2_usage << "), Routing time: " << router.runtime << "ms" << std::endl;
                             out << "[NOR_HPWL=" << w_solutions[k].nor_hpwl << ", MAX_H_GRID=" << w_solutions[k].max_h_grid << ", MAX_V_GRID=" << w_solutions[k].max_v_grid << ", MAX_H_COLUMN=" << w_solutions[k].max_h_column << ", MAX_V_COLUMN=" << w_solutions[k].max_v_column << ", MAX_H_ROW=" << w_solutions[k].max_h_row << ", MAX_V_ROW=" << w_solutions[k].max_v_row << std::endl << std::endl;
 
                         }
