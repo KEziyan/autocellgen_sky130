@@ -1,5 +1,7 @@
 #include "../header/Router.h"
 #include <map>
+#include <set>
+#include <array>
 
 Router::~Router() {
 
@@ -2386,22 +2388,10 @@ void Router::generate_ascii(std::ofstream &out, std::string cell_name) {
 		if (lx1 > gx1[i]) draw_rect(out, static_cast<int>(LAYER::GATE), 20, gx1[i], CENTER_Y0, lx1, CENTER_Y1);
 	}
 
-	// ---- 5. li1 电源轨 67:20（全宽）+ 下探 tab（从电源接触位置推导）----
+	// ---- 5. li1 电源轨 67:20（全宽）----
+	// 注：电源下探（VSS/VPWR tab）移到段 10 之后绘制，画时避让已画信号金属（见段 10.5）
 	draw_rect(out, static_cast<int>(LAYER::LIG), 20, 0, VDD_RAIL_Y0, xr, VDD_RAIL_Y1);   // VDD 轨
 	draw_rect(out, static_cast<int>(LAYER::LIG), 20, 0, VSS_RAIL_Y0, xr, VSS_RAIL_Y1);   // VSS 轨
-	// VSS 下探：覆盖 NMOS 侧 VSS 接触列（x = dcx±85，y = 轨底 到 接触顶+10）
-	for (int i = 0; i < num_diff; i++) {
-		if (ndiff[i] == "VSS" && need_contact(ndiff[i])) {
-			int top = (i == 0) ? NMOS_C0_Y1 + 10 : NMOS_C_Y1 + 10;
-			draw_rect(out, static_cast<int>(LAYER::LIG), 20, dcx[i] - CONTACT_HALF, VSS_RAIL_Y1, dcx[i] + CONTACT_HALF, top);
-		}
-	}
-	// VDD 下探：覆盖 PMOS 侧 VDD 接触列
-	for (int i = 0; i < num_diff; i++) {
-		if (pdiff[i] == "VDD" && need_contact(pdiff[i])) {
-			draw_rect(out, static_cast<int>(LAYER::LIG), 20, dcx[i] - CONTACT_HALF, PMOS_VDD_Y0 - 80, dcx[i] + CONTACT_HALF, VDD_RAIL_Y0);
-		}
-	}
 
 	// ---- 6. 栅接触 66:44（落在 landing 上，y 中带）----
 	for (int i = 0; i < num_gate_real; i++) {
@@ -2451,7 +2441,17 @@ void Router::generate_ascii(std::ofstream &out, std::string cell_name) {
 		}
 	}
 
-	// ---- 9. li1 信号金属 67:20：输入焊块 + 输出干线（Z 形避让栅接触）----
+	// 已画信号金属记录（x0,y0,x1,y1）——供段 10.5 电源下探避让（段 9/10 画信号时记录）
+	std::vector<std::array<int, 4>> drawn_sig;
+	auto push_sig = [&](int x0, int y0, int x1, int y1) {
+		drawn_sig.push_back({x0, y0, x1, y1});
+		draw_rect(out, static_cast<int>(LAYER::LIG), 20, x0, y0, x1, y1);
+	};
+	// 栅网集合（poly 已连通所有栅——内部栅网的连接走 poly，不需要跨列条）
+	std::set<std::string> gate_nets;
+	for (int k = 0; k < num_gate_real; k++) gate_nets.insert(place_sol.nmos[real_col[k]].gate);
+
+	// ---- 9. li1 信号金属 67:20：输入焊块 + 内部栅网连接 + 输出干线（Z 形避让栅接触）----
 	{
 		// 输入网：li1 焊块包裹栅接触（吸附轨道）
 		std::vector<std::string> io_in;
@@ -2467,7 +2467,29 @@ void Router::generate_ascii(std::ofstream &out, std::string cell_name) {
 			// 焊块 = 栅接触 与 轨道 的并集外扩 20（保证 licon 与 pin 标记都被覆盖）
 			int c0 = std::min(gcx[i] - CONTACT_HALF, mx - CONTACT_HALF) - 20;
 			int c1 = std::max(gcx[i] + CONTACT_HALF, mx + CONTACT_HALF) + 20;
-			draw_rect(out, static_cast<int>(LAYER::LIG), 20, c0, CENTER_Y0 - 10, c1, CENTER_Y1 + 10);
+			push_sig(c0, CENTER_Y0 - 10, c1, CENTER_Y1 + 10);
+		}
+		// 内部栅网连接：非输入栅网的栅接触与同网扩散接触必须有 li1 覆盖
+		// 注：栅接触 → 扩散接触的"穿越中带走线"需要通道避让（避开输入焊块/输出干线/栅接触），
+		// 本轮实现只保证 licon 覆盖（电气连接走线列为待办：需复用输出干线的中带通道逻辑）
+		for (int i = 0; i < num_gate_real; i++) {
+			std::string gnet = place_sol.nmos[real_col[i]].gate;
+			if (gnet == "dummy" || gnet == "VDD" || gnet == "VSS") continue;
+			bool is_in = false;
+			for (auto& n : io_in) if (n == gnet) is_in = true;
+			if (is_in) continue;  // 输入已有焊块
+			// 栅接触覆盖块（保证栅接触 licon 被 li1 覆盖，全宽 170）
+			push_sig(gcx[i] - CONTACT_HALF, GCONT_Y0, gcx[i] + CONTACT_HALF, GCONT_Y1);
+			// 同网扩散接触覆盖块（N 侧列 → N 接触带；P 侧列 → P 接触带全排）
+			std::vector<int> gdiff_n, gdiff_p;
+			for (int d = 0; d < num_diff; d++) {
+				if (ndiff[d] == gnet && need_contact(ndiff[d])) gdiff_n.push_back(dcx[d]);
+				if (pdiff[d] == gnet && need_contact(pdiff[d])) gdiff_p.push_back(dcx[d]);
+			}
+			for (auto d : gdiff_n)
+				push_sig(d - CONTACT_HALF, NMOS_C_Y0, d + CONTACT_HALF, NMOS_C_Y1);
+			for (auto d : gdiff_p)
+				push_sig(d - CONTACT_HALF, PMOS_SG_Y0 - 40, d + CONTACT_HALF, PMOS_SH2_Y1 + 85);
 		}
 		// 输出网（Y）：5 段阶梯干线（LEF 精确逻辑的通用推导，全段 ≥170 宽、避开栅接触/输入焊块）
 		{
@@ -2492,19 +2514,19 @@ void Router::generate_ascii(std::ofstream &out, std::string cell_name) {
 				int n1 = *std::max_element(y_n_cx.begin(), y_n_cx.end()) + CONTACT_HALF;
 				int p0 = *std::min_element(y_p_cx.begin(), y_p_cx.end()) - CONTACT_HALF;
 				int p1 = *std::max_element(y_p_cx.begin(), y_p_cx.end()) + CONTACT_HALF;
-				// 中带通道：在 [lo,hi]（NMOS/PMOS Y 接触全范围）内找避开中带障碍（栅接触/输入焊块，膨胀 170 间距）的最大空隙
+				// 中带通道：在 [lo,hi]（NMOS/PMOS Y 接触全范围）内找避开中带障碍的最大空隙
 				int lo = std::min(n0, p0), hi = std::max(n1, p1);
 				std::vector<std::pair<int,int>> obs;
-				auto add_obs = [&](int o0, int o1) {
-					int a = std::max(lo, o0 - 170), b = std::min(hi, o1 + 170);
+				auto add_obs = [&](int o0, int o1, int pad) {
+					int a = std::max(lo, o0 - pad), b = std::min(hi, o1 + pad);
 					if (a < b) obs.push_back(std::make_pair(a, b));
 				};
 				for (int i = 0; i < num_gate_real; i++) {
-					// 栅接触 y 与中带 [CENTER_Y0, CENTER_Y1] 相交才构成障碍
+					// 栅接触 y 与中带相交才构成障碍；pad = 半宽 + li1 间距（85+70），避免相邻 460 距接触区合并
 					if (GCONT_Y0 < CENTER_Y1 && CENTER_Y0 < GCONT_Y1)
-						add_obs(gcx[i] - CONTACT_HALF, gcx[i] + CONTACT_HALF);
+						add_obs(gcx[i] - CONTACT_HALF, gcx[i] + CONTACT_HALF, CONTACT_HALF + 70);
 				}
-				for (size_t i = 0; i < wl.size(); i++) add_obs(wl[i], wr[i]);
+				for (size_t i = 0; i < wl.size(); i++) add_obs(wl[i], wr[i], 0);
 				std::sort(obs.begin(), obs.end());
 				int ch0 = lo, ch1 = hi, best_w = -1, cur = lo;
 				for (size_t i = 0; i < obs.size(); i++) {
@@ -2521,51 +2543,104 @@ void Router::generate_ascii(std::ofstream &out, std::string cell_name) {
 				int y3 = CENTER_Y1 + 170;             // 1495：中带通道顶
 				int y4 = PMOS_SG_Y0 - 40;             // 1685：PMOS 接触段底
 				if (ch1 - ch0 >= 170) {
-					draw_rect(out, static_cast<int>(LAYER::LIG), 20, n0, NMOS_C_Y0 - 180, n1, y1);              // 段1 NMOS 接触
-					draw_rect(out, static_cast<int>(LAYER::LIG), 20, std::min(ch0, n1), y1, std::max(ch0, n1), y2); // 段2 过渡1（方向自适应）
-					draw_rect(out, static_cast<int>(LAYER::LIG), 20, ch0, y2, ch1, y3);                           // 段3 中带通道
-					draw_rect(out, static_cast<int>(LAYER::LIG), 20, std::min(p0, ch1), y3, std::max(p0, ch1), y4); // 段4 过渡2（方向自适应）
-					draw_rect(out, static_cast<int>(LAYER::LIG), 20, p0, y4, p1, PMOS_SH2_Y1 + 85);              // 段5 PMOS 接触（覆盖单列+共享区全部接触排）
+					push_sig(n0, NMOS_C_Y0 - 180, n1, y1);              // 段1 NMOS 接触
+					push_sig(std::min(ch0, n1), y1, std::max(ch0, n1), y2); // 段2 过渡1（方向自适应）
+					push_sig(ch0, y2, ch1, y3);                           // 段3 中带通道
+					push_sig(std::min(p0, ch1), y3, std::max(p0, ch1), y4); // 段4 过渡2（方向自适应）
+					push_sig(p0, y4, p1, PMOS_SH2_Y1 + 85);              // 段5 PMOS 接触（覆盖单列+共享区全部接触排）
 				} else {
-					// 通道不足：竖带1(到中带底) + 中带横条 + 竖带2(中带顶起)，三段相接无重叠（中带允许骑栅）
-					draw_rect(out, static_cast<int>(LAYER::LIG), 20, n0, NMOS_C_Y0 - 180, n1, CENTER_Y0);
-					draw_rect(out, static_cast<int>(LAYER::LIG), 20, std::min(n0, p0), CENTER_Y0, std::max(n1, p1), CENTER_Y1);
-					draw_rect(out, static_cast<int>(LAYER::LIG), 20, p0, CENTER_Y1, p1, PMOS_SG2_Y1 + 85);
+					// 通道不足（中带被栅接触/焊块塞满，如 xor2 类多栅密列）：
+					// 竖带1(到中带底) + 中带横条拆段避开障碍 + 竖带2(中带顶起)；
+					// 拆段之间若被障碍切断则该段电气断开（记录为结构族缺口：长距跨中带走线需通道绕行），
+					// 但保证不产生同层重叠（DRC 干净）
+					push_sig(n0, NMOS_C_Y0 - 180, n1, CENTER_Y0 - 25);
+					int c0 = lo;
+					for (auto& o : obs) {
+						if (o.first > c0 && o.first - c0 >= 140)
+							push_sig(c0, CENTER_Y0 - 25, o.first, CENTER_Y1 + 25);
+						c0 = std::max(c0, o.second);
+					}
+					if (hi - c0 >= 140) push_sig(c0, CENTER_Y0 - 25, hi, CENTER_Y1 + 25);
+					push_sig(p0, CENTER_Y1 + 25, p1, PMOS_SG2_Y1 + 85);
 				}
 			} else if (!y_p_cx.empty()) {
 				// 仅 PMOS 侧 Y（如 inv：Y 接触在单列区两侧）
 				int p0 = *std::min_element(y_p_cx.begin(), y_p_cx.end()) - CONTACT_HALF;
 				int p1 = *std::max_element(y_p_cx.begin(), y_p_cx.end()) + CONTACT_HALF;
-				draw_rect(out, static_cast<int>(LAYER::LIG), 20, p0, PMOS_SG_Y0 - 40, p1, PMOS_SH2_Y1 + 85);
+				push_sig(p0, PMOS_SG_Y0 - 40, p1, PMOS_SH2_Y1 + 85);
 			} else if (!y_n_cx.empty()) {
 				int n0 = *std::min_element(y_n_cx.begin(), y_n_cx.end()) - CONTACT_HALF;
 				int n1 = *std::max_element(y_n_cx.begin(), y_n_cx.end()) + CONTACT_HALF;
-				draw_rect(out, static_cast<int>(LAYER::LIG), 20, n0, NMOS_C_Y0 - 180, n1, NMOS_C_Y1 + 180);
+				push_sig(n0, NMOS_C_Y0 - 180, n1, NMOS_C_Y1 + 180);
 			}
 		}
 	}
 
-	// ---- 10. 跨列信号连接条（同 net 多列 → li1 连接条：左块+底块+右块，避开电源下探与 Y 干线）----
+	// ---- 10. 跨列信号连接条（同 net 多列 → li1 连接条，P/N 分侧统计，栅网免跨列条）----
+	// P 侧跨列网画在 PMOS 带（y_lo~y_hi），N 侧跨列网画在 NMOS 带（NMOS 接触带 y 范围）
+	// 栅网跳过：poly 已连通所有栅，不需要 li1 跨列条（a22o 的 y 内部栅网即此类）
 	{
-		std::map<std::string, std::vector<int>> sig_cols;
+		std::map<std::string, std::vector<int>> sig_cols_p, sig_cols_n;
 		for (int i = 0; i < num_diff; i++) {
-			if (pdiff[i] != "dummy" && pdiff[i] != "VDD" && pdiff[i] != "VSS" && pdiff[i] != out_net) sig_cols[pdiff[i]].push_back(i);
-			if (ndiff[i] != "dummy" && ndiff[i] != "VDD" && ndiff[i] != "VSS" && ndiff[i] != out_net) sig_cols[ndiff[i]].push_back(i);
+			if (pdiff[i] != "dummy" && pdiff[i] != "VDD" && pdiff[i] != "VSS" && pdiff[i] != out_net && !gate_nets.count(pdiff[i]))
+				sig_cols_p[pdiff[i]].push_back(i);
+			if (ndiff[i] != "dummy" && ndiff[i] != "VDD" && ndiff[i] != "VSS" && ndiff[i] != out_net && !gate_nets.count(ndiff[i]))
+				sig_cols_n[ndiff[i]].push_back(i);
 		}
-		for (auto& kv : sig_cols) {
-			auto& cols = kv.second;
-			if (cols.size() < 2) continue;
+		auto draw_p_bridge = [&](const std::vector<int>& cols) {
 			int xl0 = dcx[cols.front()] - CONTACT_HALF - 85;
 			int xl1 = dcx[cols.front()] + CONTACT_HALF + 85;
 			int xr0 = dcx[cols.back()] - CONTACT_HALF - 85;
 			int xr1 = dcx[cols.back()] + CONTACT_HALF + 85;
-			// y：左/右块覆盖 PMOS 接触（低排 1725 起、高排到 2375），底块在 Y 干线下方绕行
 			int y_lo = PMOS_SG_Y0 - 40;               // 1685（避开 Y 段4 上界）
 			int y_hi = PMOS_SH2_Y1 + 85;              // 2460
 			int vdd_tab_bot = PMOS_VDD_Y0 - 80;       // 2195（VDD 下探底）
-			draw_rect(out, static_cast<int>(LAYER::LIG), 20, xl0, y_lo, xl1, y_hi);
-			draw_rect(out, static_cast<int>(LAYER::LIG), 20, xl1, y_lo, xr0, vdd_tab_bot - 170);
-			draw_rect(out, static_cast<int>(LAYER::LIG), 20, xr0, y_lo, xr1, y_hi);
+			push_sig(xl0, y_lo, xl1, y_hi);
+			push_sig(xl1, y_lo, xr0, vdd_tab_bot - 170);
+			push_sig(xr0, y_lo, xr1, y_hi);
+		};
+		auto draw_n_bridge = [&](const std::vector<int>& cols) {
+			// N 侧跨列条：NMOS 接触带 y 范围（避开 VSS 下探：横条走接触带中段）
+			int xl0 = dcx[cols.front()] - CONTACT_HALF - 85;
+			int xl1 = dcx[cols.front()] + CONTACT_HALF + 85;
+			int xr0 = dcx[cols.back()] - CONTACT_HALF - 85;
+			int xr1 = dcx[cols.back()] + CONTACT_HALF + 85;
+			int y_lo = NMOS_C_Y0 - 40;                // 405
+			int y_hi = NMOS_C_Y1 + 40;                // 655
+			push_sig(xl0, y_lo, xl1, y_hi);
+			push_sig(xl1, y_lo, xr0, y_hi);
+			push_sig(xr0, y_lo, xr1, y_hi);
+		};
+		for (auto& kv : sig_cols_p) { auto& cols = kv.second; if (cols.size() >= 2) draw_p_bridge(cols); }
+		for (auto& kv : sig_cols_n) { auto& cols = kv.second; if (cols.size() >= 2) draw_n_bridge(cols); }
+	}
+
+	// ---- 10.5 电源下探 tab（从电源接触位置推导，画时避让已画信号金属：下探从覆盖金属上沿开始）----
+	{
+		auto avoid = [&](int x0, int y0, int x1, int y1) {
+			// 返回避让后的 y0（与已画信号金属 x 重叠且 y 区间相交时，从其上沿开始）
+			int ny0 = y0;
+			for (auto& r : drawn_sig)
+				if (r[0] < x1 && r[2] > x0 && r[1] < y1 && r[3] > y0)
+					ny0 = std::max(ny0, r[3]);
+			return ny0;
+		};
+		// VSS 下探：覆盖 NMOS 侧 VSS 接触列
+		for (int i = 0; i < num_diff; i++) {
+			if (ndiff[i] == "VSS" && need_contact(ndiff[i])) {
+				int top = (i == 0) ? NMOS_C0_Y1 + 10 : NMOS_C_Y1 + 10;
+				int y0 = avoid(dcx[i] - CONTACT_HALF, VSS_RAIL_Y1, dcx[i] + CONTACT_HALF, top);
+				if (y0 < top)
+					push_sig(dcx[i] - CONTACT_HALF, y0, dcx[i] + CONTACT_HALF, top);
+			}
+		}
+		// VDD 下探：覆盖 PMOS 侧 VDD 接触列
+		for (int i = 0; i < num_diff; i++) {
+			if (pdiff[i] == "VDD" && need_contact(pdiff[i])) {
+				int y0 = avoid(dcx[i] - CONTACT_HALF, PMOS_VDD_Y0 - 80, dcx[i] + CONTACT_HALF, VDD_RAIL_Y0);
+				if (y0 < VDD_RAIL_Y0)
+					push_sig(dcx[i] - CONTACT_HALF, y0, dcx[i] + CONTACT_HALF, VDD_RAIL_Y0);
+			}
 		}
 	}
 
