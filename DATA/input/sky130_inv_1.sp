@@ -1,0 +1,4 @@
+.SUBCKT inv_1 A VDD VSS Y
+MMIN1 Y A VSS VSS nfet_01v8 m=1 w=0.65 l=0.15
+MMIP1 Y A VDD VSS pfet_01v8_hvt m=1 w=1.0 l=0.15
+.ENDS

@@ -2210,46 +2210,23 @@ bool Router::routing(fs::path output_path) {
 
 void Router::generate_ascii(std::ofstream &out, std::string cell_name) {
 
-	// sky130 poly 位置（nm）：栅体 x0-x1（全高）+ landing lx0-lx1（中带 y 995~1325）
-	// 工艺数据（取自官方 GDS 66:20），poly 段与接触段共用同一数据源，保证接触落在 poly 上
-	struct PolyShape { int x0, x1, lx0, lx1; };
-	PolyShape sky130_polys[] = {
-		{ 415,  565,  105,  415},   // 列1：栅体 + 左凸 landing
-		{ 845,  995,  810, 1080},   // 列2：栅体 + 双侧 landing
-		{1290, 1440, 1440, 1710},   // 列3：栅体 + 右凸 landing
-	};
+	// ============ v4.0 sky130 通用几何：全部从 布局结果 + 工艺常量 推导（无单元特有坐标） ============
+	int gate_pitch = static_cast<int>(ASAP_DR::GATE_PITCH);
+	int num_gate = place_sol.nmos.size();
+	// ---- 布局的 dummy 列（PlaceUnit 为满足约束插的空列）不画 poly/接触/焊块，且不占栅距 ----
+	// sky130 官方单元无 dummy 列；AutoCellGen 布局模型可能输出 dummy 列（如 a22o 的列 2）
+	std::vector<int> real_col;
+	for (int i = 0; i < num_gate; i++)
+		if (place_sol.nmos[i].gate != "dummy" && place_sol.pmos[i].gate != "dummy")
+			real_col.push_back(i);
+	int num_gate_real = static_cast<int>(real_col.size());
+	// 单元宽 = (真实栅数+1) × 栅距
+	int x_right_boundary = gate_pitch * (num_gate_real + 1);
 
-	auto draw_boundary = [](std::ofstream &d_out, int layer_num, std::vector<Point> &points) {
-		int n_point = points.size();
-
-		d_out << "BOUNDARY;" << std::endl;
-		d_out << "LAYER " << layer_num << ";" << std::endl;
-		d_out << "DATATYPE 0;" << std::endl;
-		d_out << "XY " << n_point << ";" << std::endl;
-		for (int i = 0; i < n_point; i++) {
-			d_out << " X: " << points[i].x * 4 << ";		 Y: " << points[i].y * 4 << ";" << std::endl;
-		}
-		d_out << "ENDEL;" << std::endl << std::endl;
-	};
-
-
-	// Print prefix
-	out << "HEADER 5;" << std::endl;
-	out << "BGNLIB;" << std::endl;
-	out << " LASTMOD  {5-17-2016:1:5};" << std::endl;
-	out << " LASTACC  {5-17-2016:1:5};" << std::endl;
-	out << "LIBNAME ASAP7;" << std::endl;
-	out << "UNITS;" << std::endl;
-	out << " USERUNITS 2.500000e-04;" << std::endl;
-	out << " PHYSUNITS 2.500000e-10;" << std::endl;
-	out << std::endl;
-	out << "BGNSTR;" << std::endl;
-	out << " CREATION {5-17-2016:1:5};" << std::endl;
-	out << " LASTMOD  {5-17-2016:1:5};" << std::endl;
-	out << "STRNAME " << cell_name << ";" << std::endl;
-	out << std::endl;
-
-
+	int cell_height = static_cast<int>(ASAP_DR::CELL_HEIGHT);
+	int gate_width = static_cast<int>(ASAP_DR::GATE_WIDTH);
+	int gate_tip_ver = static_cast<int>(ASAP_DR::GATE_TIP_VER);
+	int v0_width = static_cast<int>(ASAP_DR::V0_WIDTH);
 	int m1_width = static_cast<int>(ASAP_DR::M1_WIDTH);
 	int m1_pitch = static_cast<int>(ASAP_DR::M1_PITCH);
 	int m1_v0_ex = static_cast<int>(ASAP_DR::M1_V0_EX);
@@ -2257,18 +2234,90 @@ void Router::generate_ascii(std::ofstream &out, std::string cell_name) {
 	int m1_t2s = static_cast<int>(ASAP_DR::M1_T2S);
 	int active_unit = static_cast<int>(ASAP_DR::ACTIVE_UNIT);
 
+	// ---- 工艺常数（sky130_fd_sc_hd 行结构，全库通用）----
+	const int CONTACT_HALF = v0_width / 2;      // 85（接触/焊块半宽）
+	const int SD_MARGIN = 55;                   // SD 接触到 poly 栅体边缘间距
+	const int MIN_ACTIVE = 265;                 // diff 超出最外栅的 x 向余量
+	const int GCONT_DX_L = 215;                 // 首栅接触：栅体左缘 -215（左凸 landing 上）
+	const int GCONT_DX_R = 55;                  // 其余栅接触：栅体右缘 +55（右凸 landing 上）
+	// 行结构 y（sky130 hd，2.72µm 行高固定）：
+	const int NMOS_DIFF_Y0 = 235, NMOS_DIFF_Y1 = 885;
+	const int PMOS_DIFF_Y0 = 1485, PMOS_DIFF_Y1 = 2485;
+	const int CENTER_Y0 = 995, CENTER_Y1 = 1325;   // 中带（栅接触/npc 带）
+	const int VSS_RAIL_Y0 = -85, VSS_RAIL_Y1 = 85;
+	const int VDD_RAIL_Y0 = 2635, VDD_RAIL_Y1 = 2805;
+	const int GCONT_Y0 = 1075, GCONT_Y1 = 1245;    // 栅接触 66:44
+	const int NMOS_C_Y0 = 445, NMOS_C_Y1 = 615;    // NMOS 常规接触
+	const int NMOS_C0_Y0 = 295, NMOS_C0_Y1 = 465;  // 首列 VSS 接触（低排）
+	const int PMOS_VDD_Y0 = 2275, PMOS_VDD_Y1 = 2445;
+	const int PMOS_SH_Y0 = 1865, PMOS_SH_Y1 = 2035;   // 共享扩散区高排
+	const int PMOS_SH2_Y0 = 2205, PMOS_SH2_Y1 = 2375;
+	const int PMOS_SG_Y0 = 1725, PMOS_SG_Y1 = 1895;   // 单列区低排
+	const int PMOS_SG2_Y0 = 2095, PMOS_SG2_Y1 = 2265;
+	const int BRIDGE_Y0 = 1255, BRIDGE_Y1 = 1325;     // 输出干线水平过渡条 y（栅接触带上方安全区）
 
-	// ============ sky130_fd_sc_hd 版图几何（数值来自官方 a21oi_1 GDS 实测，nm） ============
-	int gate_pitch = static_cast<int>(ASAP_DR::GATE_PITCH);
-	int num_gate = place_sol.nmos.size();
-	// 官方单元宽 = (栅数+1) × 栅距：3 栅 → 4 列 × 460 = 1840nm
-	int x_right_boundary = gate_pitch * (num_gate + 1);
+	// ---- 从布局推导：poly 栅体（真实栅 k 中心 = gate_pitch×(k+1)，跳过 dummy 列）----
+	std::vector<int> gx0(num_gate_real), gx1(num_gate_real), gxc(num_gate_real);
+	for (int k = 0; k < num_gate_real; k++) {
+		gxc[k] = gate_pitch * (k + 1);
+		gx0[k] = gxc[k] - gate_width / 2;
+		gx1[k] = gxc[k] + gate_width / 2;
+	}
 
-	int cell_height = static_cast<int>(ASAP_DR::CELL_HEIGHT);
-	int gate_width = static_cast<int>(ASAP_DR::GATE_WIDTH);
-	int gate_tip_ver = static_cast<int>(ASAP_DR::GATE_TIP_VER);
-	int lisd_width = static_cast<int>(ASAP_DR::LISD_WIDTH);
-	int v0_width = static_cast<int>(ASAP_DR::V0_WIDTH);
+	// ---- 从布局推导：SD 接触列 x（真实栅数+1 个扩散区）----
+	std::vector<int> dcx(num_gate_real + 1);
+	dcx[0] = gx0[0] - v0_width / 2 - SD_MARGIN;
+	for (int k = 1; k < num_gate_real; k++) dcx[k] = (gx1[k - 1] + gx0[k]) / 2;
+	dcx[num_gate_real] = gx1[num_gate_real - 1] + v0_width / 2 + SD_MARGIN;
+
+	// ---- 栅接触 x：首栅左凸 landing，其余栅右凸 landing ----
+	std::vector<int> gcx(num_gate_real);
+	for (int k = 0; k < num_gate_real; k++)
+		gcx[k] = (k == 0) ? (gx0[k] - GCONT_DX_L) : (gx1[k] + GCONT_DX_R);
+
+	// ---- 轨道吸附（sky130 li1 规律：pin marker / mcon 锁 x≡0.23 mod 0.46）----
+	auto snap_track = [&](int x) {
+		int d = x - gate_pitch / 2;
+		int k = d / gate_pitch;
+		int rem = d % gate_pitch;
+		if (rem >= gate_pitch / 2) k++;
+		else if (rem <= -gate_pitch / 2) k--;
+		return gate_pitch / 2 + k * gate_pitch;
+	};
+
+	// ---- diff 上的网序列（真实栅 k 对应布局列 real_col[k]，跨列共享区取 right）----
+	std::vector<std::string> pdiff, ndiff;
+	for (int k = 0; k < num_gate_real; k++) {
+		int col = real_col[k];
+		if (k == 0) { pdiff.push_back(place_sol.pmos[col].left); ndiff.push_back(place_sol.nmos[col].left); }
+		if (k != num_gate_real - 1) {
+			int col2 = real_col[k + 1];
+			std::string rp = (place_sol.pmos[col].right != "dummy") ? place_sol.pmos[col].right : place_sol.pmos[col2].left;
+			pdiff.push_back(rp);
+			std::string rn = (place_sol.nmos[col].right != "dummy") ? place_sol.nmos[col].right : place_sol.nmos[col2].left;
+			ndiff.push_back(rn);
+		} else { pdiff.push_back(place_sol.pmos[col].right); ndiff.push_back(place_sol.nmos[col].right); }
+	}
+	int num_diff = pdiff.size();
+	// ---- 动态识别输出网（通用规则）：输出 = 端口网中非电源、且不作为任何栅极的网 ----
+	// sky130 hd 组合单元输出名不统一（a21oi/nand3 叫 Y，a22o/xor2 叫 X，时序单元叫 Q/QN）
+	// 不能硬编码 "Y"——从拓扑推导：端口网 ∩ (非栅网) - 电源
+	std::string out_net;
+	for (auto& net : cell.IOnets) {
+		if (net == "VDD" || net == "VSS") continue;
+		bool is_gate_net = false;
+		for (int i = 0; i < num_gate; i++) {
+			if (place_sol.nmos[i].gate == net || place_sol.pmos[i].gate == net) { is_gate_net = true; break; }
+		}
+		if (!is_gate_net) { out_net = net; break; }
+	}
+	// net 出现次数（决定是否画接触：≥2 或电源）
+	std::map<std::string, int> net_cnt;
+	for (auto& s : pdiff) if (s != "dummy") net_cnt[s]++;
+	for (auto& s : ndiff) if (s != "dummy") net_cnt[s]++;
+	auto need_contact = [&](const std::string &s) {
+		return s != "dummy" && (net_cnt[s] >= 2 || s == "VDD" || s == "VSS");
+	};
 
 	// 局部画矩形 helper（层 / datatype / 左下 / 右上，单位 nm，×4 转 DBU）
 	auto draw_rect = [](std::ofstream &d_out, int layer_num, int datatype, int x1, int y1, int x2, int y2) {
@@ -2285,213 +2334,271 @@ void Router::generate_ascii(std::ofstream &out, std::string cell_name) {
 	};
 
 	int xr = x_right_boundary;
+	int diff_x0 = gx0[0] - MIN_ACTIVE;
 
-	// ---- 1. 单元边界 236:0 全高 ----
+	// ---- GDS 前缀（ascii2gdsii 必需）----
+	out << "HEADER 5;" << std::endl;
+	out << "BGNLIB;" << std::endl;
+	out << " LASTMOD  {5-17-2016:1:5};" << std::endl;
+	out << " LASTACC  {5-17-2016:1:5};" << std::endl;
+	out << "LIBNAME ASAP7;" << std::endl;
+	out << "UNITS;" << std::endl;
+	out << " USERUNITS 2.500000e-04;" << std::endl;
+	out << " PHYSUNITS 2.500000e-10;" << std::endl;
+	out << std::endl;
+	out << "BGNSTR;" << std::endl;
+	out << " CREATION {5-17-2016:1:5};" << std::endl;
+	out << " LASTMOD  {5-17-2016:1:5};" << std::endl;
+	out << "STRNAME " << cell_name << ";" << std::endl;
+	out << std::endl;
+
+	int diff_x1 = gx1[num_gate_real - 1] + MIN_ACTIVE;
+
+	// ---- 1. 单元边界 236:0 + aux 81:4 ----
 	draw_rect(out, static_cast<int>(LAYER::BOUNDARY), 0, 0, 0, xr, cell_height);
-	draw_rect(out, 81, 4, 0, 0, xr, cell_height);   // aux 81:4 全 cell 框（官方标签层）
+	draw_rect(out, 81, 4, 0, 0, xr, cell_height);
 
-	// ---- 2. 注入/阱带（官方实测：nwell 外扩 190；nsdm/psdm/hvtp 分带） ----
-	draw_rect(out, static_cast<int>(LAYER::WELL),    20, -190, 1305, xr + 190, 2910);   // nwell 64:20
-	draw_rect(out, static_cast<int>(LAYER::NSELECT), 44,    0, -190, xr,       1015);   // nsdm 93:44（NMOS 区）
-	draw_rect(out, static_cast<int>(LAYER::PSELECT), 20,    0, 1355, xr,       2910);   // psdm 94:20（PMOS 区）
-	draw_rect(out, static_cast<int>(LAYER::HVTP),    44,    0, 1250, xr,       2720);   // hvtp 78:44（pfet_01v8_hvt 注入）
-	draw_rect(out, static_cast<int>(LAYER::NPC),     20,    0,  975, xr,       1345);   // npc 95:20（栅接触带）
-
-	// ---- 3. diff 两条（官方：PMOS y[1485,2485]，NMOS y[235,885]，x[150,1705]） ----
-	draw_rect(out, static_cast<int>(LAYER::ACTIVE), 20, 150, 1485, xr - 135, 2485);   // PMOS
-	draw_rect(out, static_cast<int>(LAYER::ACTIVE), 20, 150,  235, xr - 135,  885);   // NMOS
-
-	// ---- 4. poly 栅 66:20（sky130 形状：栅体 150nm 全高 y[105,2615] + 中带 landing 凸出） ----
+	// ---- 2. 注入/阱带（sky130 hd 行结构通用）----
+	draw_rect(out, static_cast<int>(LAYER::WELL),    20, -190, 1305, xr + 190, 2910);   // nwell
+	draw_rect(out, static_cast<int>(LAYER::NSELECT), 44,    0, -190, xr,       1015);   // nsdm（NMOS 区）
+	draw_rect(out, static_cast<int>(LAYER::PSELECT), 20,    0, 1355, xr,       2910);   // psdm（PMOS 区）
+	// hvtp 78:44：单元含 hvt PMOS 时绘制（vt_flavor 驱动）
 	{
-		for (auto& pg : sky130_polys) {
-			// 栅体全高（poly 跨过 diff 的完整栅极）
-			draw_rect(out, static_cast<int>(LAYER::GATE), 20, pg.x0, gate_tip_ver, pg.x1, cell_height - gate_tip_ver);
-			// landing 只画栅体外凸部分（lx0<x0 → 左凸；lx1>x1 → 右凸），避免与栅体重叠
-			if (pg.lx0 < pg.x0) draw_rect(out, static_cast<int>(LAYER::GATE), 20, pg.lx0, 995, pg.x0, 1325);
-			if (pg.lx1 > pg.x1) draw_rect(out, static_cast<int>(LAYER::GATE), 20, pg.x1, 995, pg.lx1, 1325);
+		bool has_hvt = false;
+		for (auto& t : cell.pmos) if (t.vt_flavor == "hvt") has_hvt = true;
+		if (has_hvt) draw_rect(out, static_cast<int>(LAYER::HVTP), 44, 0, 1250, xr, 2720);
+	}
+	draw_rect(out, static_cast<int>(LAYER::NPC),     20,    0, 975, xr, 1345);         // npc（栅接触带）
+
+	// ---- 3. diff 两条（x 从 MIN_ACTIVE 推导，y 行结构）----
+	draw_rect(out, static_cast<int>(LAYER::ACTIVE), 20, diff_x0, PMOS_DIFF_Y0, diff_x1, PMOS_DIFF_Y1);   // PMOS
+	draw_rect(out, static_cast<int>(LAYER::ACTIVE), 20, diff_x0, NMOS_DIFF_Y0, diff_x1, NMOS_DIFF_Y1);   // NMOS
+
+	// ---- 4. poly 栅体 66:20 + landing 凸出 ----
+	for (int i = 0; i < num_gate_real; i++) {
+		// 栅体全高
+		draw_rect(out, static_cast<int>(LAYER::GATE), 20, gx0[i], gate_tip_ver, gx1[i], cell_height - gate_tip_ver);
+		// landing：首栅左凸（[gcx-85, gx0]），其余右凸（[gx1, gcx+85]）
+		int lx0, lx1;
+		if (i == 0) { lx0 = gcx[i] - CONTACT_HALF; lx1 = gx0[i]; }
+		else        { lx0 = gx1[i]; lx1 = gcx[i] + CONTACT_HALF; }
+		if (lx0 < gx0[i]) draw_rect(out, static_cast<int>(LAYER::GATE), 20, lx0, CENTER_Y0, gx0[i], CENTER_Y1);
+		if (lx1 > gx1[i]) draw_rect(out, static_cast<int>(LAYER::GATE), 20, gx1[i], CENTER_Y0, lx1, CENTER_Y1);
+	}
+
+	// ---- 5. li1 电源轨 67:20（全宽）+ 下探 tab（从电源接触位置推导）----
+	draw_rect(out, static_cast<int>(LAYER::LIG), 20, 0, VDD_RAIL_Y0, xr, VDD_RAIL_Y1);   // VDD 轨
+	draw_rect(out, static_cast<int>(LAYER::LIG), 20, 0, VSS_RAIL_Y0, xr, VSS_RAIL_Y1);   // VSS 轨
+	// VSS 下探：覆盖 NMOS 侧 VSS 接触列（x = dcx±85，y = 轨底 到 接触顶+10）
+	for (int i = 0; i < num_diff; i++) {
+		if (ndiff[i] == "VSS" && need_contact(ndiff[i])) {
+			int top = (i == 0) ? NMOS_C0_Y1 + 10 : NMOS_C_Y1 + 10;
+			draw_rect(out, static_cast<int>(LAYER::LIG), 20, dcx[i] - CONTACT_HALF, VSS_RAIL_Y1, dcx[i] + CONTACT_HALF, top);
+		}
+	}
+	// VDD 下探：覆盖 PMOS 侧 VDD 接触列
+	for (int i = 0; i < num_diff; i++) {
+		if (pdiff[i] == "VDD" && need_contact(pdiff[i])) {
+			draw_rect(out, static_cast<int>(LAYER::LIG), 20, dcx[i] - CONTACT_HALF, PMOS_VDD_Y0 - 80, dcx[i] + CONTACT_HALF, VDD_RAIL_Y0);
 		}
 	}
 
-	// ---- 4b. li1 pin 67:16（sky130 惯例：信号 pin 在 li1；几何取自官方 sky130_fd_sc_hd__a21oi_1.lef 的 PIN RECT，nm） ----
-	{
-		struct LefPin { int x0, y0, x1, y1; };
-		LefPin pins[] = {
-			{ 850,  995, 1265, 1325},   // A1
-			{1035,  375, 1265,  995},   // A1
-			{1445,  995, 1740, 1325},   // A2
-			{  95,  675,  335, 1325},   // B1
-			{  95, 1495,  680, 1685},   // Y
-			{  95, 1685,  370, 2455},   // Y
-			{ 505,  645,  835,  825},   // Y
-			{ 505,  825,  680, 1495},   // Y
-			{ 610,  265,  835,  645},   // Y
-		};
-		for (auto& r : pins) {
-			// sky130 惯例：信号互连 = pin 区金属（li1）
-			draw_rect(out, static_cast<int>(LAYER::LIG), 20, r.x0, r.y0, r.x1, r.y1);
-		}
-	}
-	// li1 pin 标记 67:16：不是金属，是"pin 接入点"标注（EDA 提取 pin 连接时读它，位置必须在 67:20 金属内）
-	// sky130 惯例：标记数量/位置 = 该 pin 金属的可接入分段（A1 面积大 3 个、B1/Y 2 个、A2 1 个），取自官方版图
-	{
-		struct PinMark { int x0, y0, x1, y1; };
-		PinMark marks[] = {
-			{ 145,  765,  315,  935},   // B1 接入点 1
-			{ 145, 1105,  315, 1275},   // B1 接入点 2（栅接触旁）
-			{ 145, 1785,  315, 1955},   // Y 接入点 1（rail 列）
-			{ 145, 2125,  315, 2295},   // Y 接入点 2（rail 列）
-			{1065,  425, 1235,  595},   // A1 接入点 1
-			{1065,  765, 1235,  935},   // A1 接入点 2
-			{1065, 1105, 1235, 1275},   // A1 接入点 3
-			{1525, 1105, 1695, 1275},   // A2 接入点
-		};
-		for (auto& m : marks)
-			draw_rect(out, static_cast<int>(LAYER::LIG), 16, m.x0, m.y0, m.x1, m.y1);
+	// ---- 6. 栅接触 66:44（落在 landing 上，y 中带）----
+	for (int i = 0; i < num_gate_real; i++) {
+		draw_rect(out, static_cast<int>(LAYER::V0), 44, gcx[i] - CONTACT_HALF, GCONT_Y0, gcx[i] + CONTACT_HALF, GCONT_Y1);
 	}
 
-	// ---- 5. li1 电源轨 67:20（官方：VSS y[-85,815]，VDD y[2195,2805]） ----
-	draw_rect(out, static_cast<int>(LAYER::LIG), 20, 0, 2635, xr, 2805);
-	draw_rect(out, static_cast<int>(LAYER::LIG), 20, 1040, 2195, 1235, 2635);
-	draw_rect(out, static_cast<int>(LAYER::LIG), 20, 0, -85, xr, 85);
-	draw_rect(out, static_cast<int>(LAYER::LIG), 20, 110, 85, 440, 475);   // D0 下探（官方 VGND rect：y 仅到 475，给 B1 pin y675 让位）
-	draw_rect(out, static_cast<int>(LAYER::LIG), 20, 1445, 85, 1745, 815);
-
-	// ---- 6. 栅接触 66:44（中带 170×170；官方规律：接触 = landing 凸出 bbox 左缘 +50 起，宽 170 → cx = lx0+135） ----
-	for (int i = 0; i < num_gate; i++) {
-		int cx = sky130_polys[i].lx0 + 135;
-		draw_rect(out, static_cast<int>(LAYER::V0), 44, cx - v0_width / 2, 1075, cx + v0_width / 2, 1245);
-	}
-
-	// ---- 7. 电源轨 via 67:44（li1→M1，列中心 x = pitch×(i+0.5)） ----
-	for (int i = 0; i <= num_gate; i++) {
-		int cx = gate_pitch * (i + 1) - gate_pitch / 2;
-		draw_rect(out, static_cast<int>(LAYER::LIG), 44, cx - v0_width / 2, -v0_width / 2, cx + v0_width / 2, v0_width / 2);
-		draw_rect(out, static_cast<int>(LAYER::LIG), 44, cx - v0_width / 2, cell_height - v0_width / 2, cx + v0_width / 2, cell_height + v0_width / 2);
+	// ---- 7. 电源 via 67:44 + M1 rail 68:20 + 电源 pin 标记（列中心，轨道吸附）----
+	for (int i = 0; i <= num_gate_real; i++) {
+		int cx = gate_pitch * (i + 1) - gate_pitch / 2;   // 列中心（0.23+0.46k 轨道）
+		draw_rect(out, static_cast<int>(LAYER::LIG), 44, cx - CONTACT_HALF, -CONTACT_HALF, cx + CONTACT_HALF, CONTACT_HALF);
+		draw_rect(out, static_cast<int>(LAYER::LIG), 44, cx - CONTACT_HALF, cell_height - CONTACT_HALF, cx + CONTACT_HALF, cell_height + CONTACT_HALF);
 		if (i == 0) {
-			// M1 电源轨 68:20（sky130：met1 rail，宽 0.48µm，中心在单元上下边界——相邻单元拼接成行电源主干）
-			draw_rect(out, static_cast<int>(LAYER::M1), 20, 0, -240, xr, 240);    // VSS rail（中心 y=0）
-			draw_rect(out, static_cast<int>(LAYER::M1), 20, 0, cell_height - 240, xr, cell_height + 240); // VDD rail（中心 y=cell_height）
-			// 电源 pin（sky130：M1 68:16，列1 rail 端，与官方位置一致）
-			draw_rect(out, static_cast<int>(LAYER::M1), 16, cx - v0_width / 2, -v0_width / 2, cx + v0_width / 2, v0_width / 2);   // VSS
-			draw_rect(out, static_cast<int>(LAYER::M1), 16, cx - v0_width / 2, cell_height - v0_width / 2, cx + v0_width / 2, cell_height + v0_width / 2); // VDD
-			// 标签层（官方有、物理无功能，补齐对齐层数）：122:16 = VSS pin 标记、64:16 = nwell pin 标记（VDD 侧）
-			draw_rect(out, 122, 16, cx - v0_width / 2, -v0_width / 2, cx + v0_width / 2, v0_width / 2);
-			draw_rect(out, static_cast<int>(LAYER::WELL), 16, cx - v0_width / 2, cell_height - v0_width / 2, cx + v0_width / 2, cell_height + v0_width / 2);
+			draw_rect(out, static_cast<int>(LAYER::M1), 20, 0, -240, xr, 240);                          // VSS rail
+			draw_rect(out, static_cast<int>(LAYER::M1), 20, 0, cell_height - 240, xr, cell_height + 240); // VDD rail
+			draw_rect(out, static_cast<int>(LAYER::M1), 16, cx - CONTACT_HALF, -CONTACT_HALF, cx + CONTACT_HALF, CONTACT_HALF);   // VSS pin
+			draw_rect(out, static_cast<int>(LAYER::M1), 16, cx - CONTACT_HALF, cell_height - CONTACT_HALF, cx + CONTACT_HALF, cell_height + CONTACT_HALF); // VDD pin
+			draw_rect(out, 122, 16, cx - CONTACT_HALF, -CONTACT_HALF, cx + CONTACT_HALF, CONTACT_HALF);
+			draw_rect(out, static_cast<int>(LAYER::WELL), 16, cx - CONTACT_HALF, cell_height - CONTACT_HALF, cx + CONTACT_HALF, cell_height + CONTACT_HALF);
 		}
 	}
 
-	// ---- 8. diffusion 接触 66:44（170×170；拓扑沿用每列 diffusion 区；VDD 连接的 PMOS 接触落在轨内） ----
-	{
-		std::vector<std::string> pmos_diff, nmos_diff;
-		for (int i = 0; i < num_gate; i++) {
-			if (i == 0) {
-				pmos_diff.push_back(place_sol.pmos[i].left);
-				nmos_diff.push_back(place_sol.nmos[i].left);
-			}
-			if (i != num_gate - 1) {
-				std::string right_net;
-				right_net = (place_sol.pmos[i].right != "dummy") ? place_sol.pmos[i].right : place_sol.pmos[i + 1].left;
-				pmos_diff.push_back(right_net);
-				right_net = (place_sol.nmos[i].right != "dummy") ? place_sol.nmos[i].right : place_sol.nmos[i + 1].left;
-				nmos_diff.push_back(right_net);
+	// ---- 8. SD 接触 66:44（拓扑由 diff 网序列推导）----
+	for (int i = 0; i < num_diff; i++) {
+		bool need_pm = need_contact(pdiff[i]);
+		bool need_nm = need_contact(ndiff[i]);
+		if (need_pm) {
+			if (pdiff[i] == "VDD") {
+				draw_rect(out, static_cast<int>(LAYER::V0), 44, dcx[i] - CONTACT_HALF, PMOS_VDD_Y0, dcx[i] + CONTACT_HALF, PMOS_VDD_Y1);
 			} else {
-				pmos_diff.push_back(place_sol.pmos[i].right);
-				nmos_diff.push_back(place_sol.nmos[i].right);
+				// 共享扩散区（列间）高排 / 单列区（首/末）低排：让出下方输出金属通道
+				bool shared = (i > 0 && i < num_gate_real);
+				if (shared) {
+					draw_rect(out, static_cast<int>(LAYER::V0), 44, dcx[i] - CONTACT_HALF, PMOS_SH_Y0, dcx[i] + CONTACT_HALF, PMOS_SH_Y1);
+					draw_rect(out, static_cast<int>(LAYER::V0), 44, dcx[i] - CONTACT_HALF, PMOS_SH2_Y0, dcx[i] + CONTACT_HALF, PMOS_SH2_Y1);
+				} else {
+					draw_rect(out, static_cast<int>(LAYER::V0), 44, dcx[i] - CONTACT_HALF, PMOS_SG_Y0, dcx[i] + CONTACT_HALF, PMOS_SG_Y1);
+					draw_rect(out, static_cast<int>(LAYER::V0), 44, dcx[i] - CONTACT_HALF, PMOS_SG2_Y0, dcx[i] + CONTACT_HALF, PMOS_SG2_Y1);
+				}
 			}
 		}
-		// 泛化接触规则：net 在 diff 区出现 ≥2 次（VDD/VSS/输出/跨列节点）→ 画接触；
-		// 只出现 1 次 = 纯串联共享节点（如 sndA1），靠共享 diffusion 连通，官方不画接触
-		std::map<std::string, int> diff_net_cnt;
-		for (auto& ss : pmos_diff) if (ss != "dummy") diff_net_cnt[ss]++;
-		for (auto& ss : nmos_diff) if (ss != "dummy") diff_net_cnt[ss]++;
-
-		const int SD_MARGIN = 55;  // SD 接触到 poly 栅体边缘间距（nm，sky130 工艺）
-		int num_diff = pmos_diff.size();
-		for (int i = 0; i < num_diff; i++) {
-			// SD 接触 x：D0 = poly0 左缘 - 半宽 - 间距；间隙 = 相邻 poly 栅体间距中心；末端 = poly 末右缘 + 半宽 + 间距
-			int cx;
-			if (i == 0) cx = sky130_polys[0].x0 - v0_width / 2 - SD_MARGIN;
-			else if (i == num_diff - 1) cx = sky130_polys[num_gate - 1].x1 + v0_width / 2 + SD_MARGIN;
-			else cx = (sky130_polys[i - 1].x1 + sky130_polys[i].x0) / 2;
-			bool need_pm = (pmos_diff[i] != "dummy") && (diff_net_cnt[pmos_diff[i]] >= 2 || pmos_diff[i] == "VDD" || pmos_diff[i] == "VSS");
-			bool need_nm = (nmos_diff[i] != "dummy") && (diff_net_cnt[nmos_diff[i]] >= 2 || nmos_diff[i] == "VDD" || nmos_diff[i] == "VSS");
-			if (need_pm) {
-				if (pmos_diff[i] == "VDD") {
-					// VDD 列：单排高接触，落在 VPWR 下探区内（官方惯例 y[2275,2445]）
-					draw_rect(out, static_cast<int>(LAYER::V0), 44, cx - v0_width / 2, 2275, cx + v0_width / 2, 2445);
-				} else {
-					// 共享扩散区（列间同 net 连续，i∈[1,num_gate-1]）：高排（官方 pndA [1865,2035]+[2205,2375]，
-					// 让出下方 Y 金属通道，避免 li1 重叠）
-					// 单列区（首列左 / 末列右）：低排（官方 Y [1725,1895]+[2095,2265]）
-					if (i > 0 && i < num_gate) {
-						draw_rect(out, static_cast<int>(LAYER::V0), 44, cx - v0_width / 2, 1865, cx + v0_width / 2, 2035);
-						draw_rect(out, static_cast<int>(LAYER::V0), 44, cx - v0_width / 2, 2205, cx + v0_width / 2, 2375);
-					} else {
-						draw_rect(out, static_cast<int>(LAYER::V0), 44, cx - v0_width / 2, 1725, cx + v0_width / 2, 1895);
-						draw_rect(out, static_cast<int>(LAYER::V0), 44, cx - v0_width / 2, 2095, cx + v0_width / 2, 2265);
-					}
-				}
-			}
-			if (need_nm) {
-				if (i == 0 && nmos_diff[i] == "VSS") {
-					// 首列 VSS 接触：低排（官方 [295,465]，VGND 下探仅到 475，给 B1 pin 让位）
-					draw_rect(out, static_cast<int>(LAYER::V0), 44, cx - v0_width / 2, 295, cx + v0_width / 2, 465);
-				} else {
-					draw_rect(out, static_cast<int>(LAYER::V0), 44, cx - v0_width / 2, 445, cx + v0_width / 2, 615);
-				}
+		if (need_nm) {
+			if (i == 0 && ndiff[i] == "VSS") {
+				draw_rect(out, static_cast<int>(LAYER::V0), 44, dcx[i] - CONTACT_HALF, NMOS_C0_Y0, dcx[i] + CONTACT_HALF, NMOS_C0_Y1);
+			} else {
+				draw_rect(out, static_cast<int>(LAYER::V0), 44, dcx[i] - CONTACT_HALF, NMOS_C_Y0, dcx[i] + CONTACT_HALF, NMOS_C_Y1);
 			}
 		}
 	}
 
-	// ---- 8b. 跨列信号连接条（sky130 工艺：同 net 出现在不相邻列区 → li1 阶梯条连通，绕开中间电源列） ----
-	// 官方 a21oi_1 的 pndA 互连 = 左块(D1) + 底块(绕行通道) + 右块(D3)，中带凹口避开 VDD 下探（y 2195-2635）
-	// 泛化：左/右块 = 该 net 各列接触 bbox 外扩 85nm；底块 = 连通通道，y 上界 = 中间电源下探底 - 170（绕行安全）
+	// ---- 9. li1 信号金属 67:20：输入焊块 + 输出干线（Z 形避让栅接触）----
 	{
-		const int SD_MARGIN = 55;   // sky130 SD 接触到 poly 栅体边缘间距（与第 8 段一致）
-		std::vector<std::string> pd, nd;
-		for (int i = 0; i < num_gate; i++) {
-			if (i == 0) { pd.push_back(place_sol.pmos[i].left); nd.push_back(place_sol.nmos[i].left); }
-			if (i != num_gate - 1) {
-				std::string rp = (place_sol.pmos[i].right != "dummy") ? place_sol.pmos[i].right : place_sol.pmos[i + 1].left;
-				pd.push_back(rp);
-				std::string rn = (place_sol.nmos[i].right != "dummy") ? place_sol.nmos[i].right : place_sol.nmos[i + 1].left;
-				nd.push_back(rn);
-			} else { pd.push_back(place_sol.pmos[i].right); nd.push_back(place_sol.nmos[i].right); }
+		// 输入网：li1 焊块包裹栅接触（吸附轨道）
+		std::vector<std::string> io_in;
+		for (auto& net : cell.IOnets)
+			if (net != "VDD" && net != "VSS" && net != out_net) io_in.push_back(net);
+		for (int i = 0; i < num_gate_real; i++) {
+			std::string gnet = place_sol.nmos[real_col[i]].gate;
+			// 该栅是输入网（栅信号）→ 焊块
+			bool is_input = false;
+			for (auto& n : io_in) if (n == gnet) is_input = true;
+			if (!is_input) continue;
+			int mx = snap_track(gcx[i]);
+			// 焊块 = 栅接触 与 轨道 的并集外扩 20（保证 licon 与 pin 标记都被覆盖）
+			int c0 = std::min(gcx[i] - CONTACT_HALF, mx - CONTACT_HALF) - 20;
+			int c1 = std::max(gcx[i] + CONTACT_HALF, mx + CONTACT_HALF) + 20;
+			draw_rect(out, static_cast<int>(LAYER::LIG), 20, c0, CENTER_Y0 - 10, c1, CENTER_Y1 + 10);
 		}
-		// 各列区 cx（与 SD 接触段同一推导）
-		std::vector<int> diff_cx;
-		for (int i = 0; i < (int)pd.size(); i++) {
-			int cx;
-			if (i == 0) cx = sky130_polys[0].x0 - v0_width / 2 - SD_MARGIN;
-			else if (i == (int)pd.size() - 1) cx = sky130_polys[num_gate - 1].x1 + v0_width / 2 + SD_MARGIN;
-			else cx = (sky130_polys[i - 1].x1 + sky130_polys[i].x0) / 2;
-			diff_cx.push_back(cx);
-		}
-		std::map<std::string, std::vector<int>> pm_net_pos;
-		for (int i = 0; i < (int)pd.size(); i++)
-			if (pd[i] != "dummy" && pd[i] != "VDD" && pd[i] != "VSS") pm_net_pos[pd[i]].push_back(i);
-		for (auto& kv : pm_net_pos) {
-			if (kv.second.size() < 2) continue;   // 单列信号（Y 由 LEF 金属跨行连通）
-			auto& cols = kv.second;
-			int xl0 = diff_cx[cols.front()] - v0_width / 2 - 85;   // 左块左缘
-			int xl1 = diff_cx[cols.front()] + v0_width / 2 + 85;   // 左块右缘
-			int xr0 = diff_cx[cols.back()] - v0_width / 2 - 85;    // 右块左缘
-			int xr1 = diff_cx[cols.back()] + v0_width / 2 + 85;    // 右块右缘
-			int y_lo = 1725 - 85;                                  // 接触 y 下界外扩
-			int y_hi = 2265 + 85;                                  // 接触 y 上界外扩
-			int bypass_top = 2195 - 170;                           // 绕行通道 y 上界（VDD 下探底 2195 - 170）
-			// 左块 y 范围：首列若为共享扩散区（接触高排 [1865,2035]+[2205,2375]）→ [1780,2460]，
-			// 避开 LEF Y 金属 (y≤1685)；单列区（接触低排 [1725,1895]+[2095,2265]）→ [1640,2350]
-			bool front_shared = (cols.front() > 0 && cols.front() < num_gate);
-			int left_y_lo = front_shared ? 1865 - 85 : y_lo;
-			int left_y_hi = front_shared ? 2375 + 85 : y_hi;
-			draw_rect(out, static_cast<int>(LAYER::LIG), 20, xl0, left_y_lo, xl1, left_y_hi);   // 左块（覆盖首列接触）
-			draw_rect(out, static_cast<int>(LAYER::LIG), 20, xl1, y_lo, xr0, bypass_top);      // 底块（绕行通道）
-			draw_rect(out, static_cast<int>(LAYER::LIG), 20, xr0, y_lo, xr1, y_hi);            // 右块（覆盖末列接触）
+		// 输出网（Y）：5 段阶梯干线（LEF 精确逻辑的通用推导，全段 ≥170 宽、避开栅接触/输入焊块）
+		{
+			std::vector<int> y_p_cx, y_n_cx;
+			for (int i = 0; i < num_diff; i++) {
+				if (pdiff[i] == out_net && need_contact(pdiff[i])) y_p_cx.push_back(dcx[i]);
+				if (ndiff[i] == out_net && need_contact(ndiff[i])) y_n_cx.push_back(dcx[i]);
+			}
+			// 输入焊块 x 范围（li1 焊块，轨道吸附）——用于中带通道避让
+			std::vector<int> wl, wr;
+			for (int i = 0; i < num_gate_real; i++) {
+				std::string gnet = place_sol.nmos[real_col[i]].gate;
+				bool is_in = false;
+				for (auto& n : cell.IOnets) if (n == gnet && n != "VDD" && n != "VSS" && n != out_net) is_in = true;
+				if (!is_in) continue;
+				int mx = snap_track(gcx[i]);
+				wl.push_back(std::min(gcx[i] - CONTACT_HALF, mx - CONTACT_HALF) - 20);
+				wr.push_back(std::max(gcx[i] + CONTACT_HALF, mx + CONTACT_HALF) + 20);
+			}
+			if (!y_p_cx.empty() && !y_n_cx.empty()) {
+				int n0 = *std::min_element(y_n_cx.begin(), y_n_cx.end()) - CONTACT_HALF;
+				int n1 = *std::max_element(y_n_cx.begin(), y_n_cx.end()) + CONTACT_HALF;
+				int p0 = *std::min_element(y_p_cx.begin(), y_p_cx.end()) - CONTACT_HALF;
+				int p1 = *std::max_element(y_p_cx.begin(), y_p_cx.end()) + CONTACT_HALF;
+				// 中带通道：在 [lo,hi]（NMOS/PMOS Y 接触全范围）内找避开中带障碍（栅接触/输入焊块，膨胀 170 间距）的最大空隙
+				int lo = std::min(n0, p0), hi = std::max(n1, p1);
+				std::vector<std::pair<int,int>> obs;
+				auto add_obs = [&](int o0, int o1) {
+					int a = std::max(lo, o0 - 170), b = std::min(hi, o1 + 170);
+					if (a < b) obs.push_back(std::make_pair(a, b));
+				};
+				for (int i = 0; i < num_gate_real; i++) {
+					// 栅接触 y 与中带 [CENTER_Y0, CENTER_Y1] 相交才构成障碍
+					if (GCONT_Y0 < CENTER_Y1 && CENTER_Y0 < GCONT_Y1)
+						add_obs(gcx[i] - CONTACT_HALF, gcx[i] + CONTACT_HALF);
+				}
+				for (size_t i = 0; i < wl.size(); i++) add_obs(wl[i], wr[i]);
+				std::sort(obs.begin(), obs.end());
+				int ch0 = lo, ch1 = hi, best_w = -1, cur = lo;
+				for (size_t i = 0; i < obs.size(); i++) {
+					if (obs[i].first > cur) {
+						int w = obs[i].first - cur;
+						if (w > best_w) { best_w = w; ch0 = cur; ch1 = obs[i].first; }
+					}
+					cur = std::max(cur, obs[i].second);
+				}
+				if (hi - cur > best_w) { ch0 = cur; ch1 = hi; }
+				// y 分界（sky130 hd 行结构推导，全段高 ≥170）
+				int y1 = NMOS_C_Y1 + 30;              // 645：NMOS 接触段顶
+				int y2 = CENTER_Y0 - 170;             // 825：中带通道底
+				int y3 = CENTER_Y1 + 170;             // 1495：中带通道顶
+				int y4 = PMOS_SG_Y0 - 40;             // 1685：PMOS 接触段底
+				if (ch1 - ch0 >= 170) {
+					draw_rect(out, static_cast<int>(LAYER::LIG), 20, n0, NMOS_C_Y0 - 180, n1, y1);              // 段1 NMOS 接触
+					draw_rect(out, static_cast<int>(LAYER::LIG), 20, std::min(ch0, n1), y1, std::max(ch0, n1), y2); // 段2 过渡1（方向自适应）
+					draw_rect(out, static_cast<int>(LAYER::LIG), 20, ch0, y2, ch1, y3);                           // 段3 中带通道
+					draw_rect(out, static_cast<int>(LAYER::LIG), 20, std::min(p0, ch1), y3, std::max(p0, ch1), y4); // 段4 过渡2（方向自适应）
+					draw_rect(out, static_cast<int>(LAYER::LIG), 20, p0, y4, p1, PMOS_SH2_Y1 + 85);              // 段5 PMOS 接触（覆盖单列+共享区全部接触排）
+				} else {
+					// 通道不足：竖带1(到中带底) + 中带横条 + 竖带2(中带顶起)，三段相接无重叠（中带允许骑栅）
+					draw_rect(out, static_cast<int>(LAYER::LIG), 20, n0, NMOS_C_Y0 - 180, n1, CENTER_Y0);
+					draw_rect(out, static_cast<int>(LAYER::LIG), 20, std::min(n0, p0), CENTER_Y0, std::max(n1, p1), CENTER_Y1);
+					draw_rect(out, static_cast<int>(LAYER::LIG), 20, p0, CENTER_Y1, p1, PMOS_SG2_Y1 + 85);
+				}
+			} else if (!y_p_cx.empty()) {
+				// 仅 PMOS 侧 Y（如 inv：Y 接触在单列区两侧）
+				int p0 = *std::min_element(y_p_cx.begin(), y_p_cx.end()) - CONTACT_HALF;
+				int p1 = *std::max_element(y_p_cx.begin(), y_p_cx.end()) + CONTACT_HALF;
+				draw_rect(out, static_cast<int>(LAYER::LIG), 20, p0, PMOS_SG_Y0 - 40, p1, PMOS_SH2_Y1 + 85);
+			} else if (!y_n_cx.empty()) {
+				int n0 = *std::min_element(y_n_cx.begin(), y_n_cx.end()) - CONTACT_HALF;
+				int n1 = *std::max_element(y_n_cx.begin(), y_n_cx.end()) + CONTACT_HALF;
+				draw_rect(out, static_cast<int>(LAYER::LIG), 20, n0, NMOS_C_Y0 - 180, n1, NMOS_C_Y1 + 180);
+			}
 		}
 	}
 
-	std::vector<int> track_y;
+	// ---- 10. 跨列信号连接条（同 net 多列 → li1 连接条：左块+底块+右块，避开电源下探与 Y 干线）----
+	{
+		std::map<std::string, std::vector<int>> sig_cols;
+		for (int i = 0; i < num_diff; i++) {
+			if (pdiff[i] != "dummy" && pdiff[i] != "VDD" && pdiff[i] != "VSS" && pdiff[i] != out_net) sig_cols[pdiff[i]].push_back(i);
+			if (ndiff[i] != "dummy" && ndiff[i] != "VDD" && ndiff[i] != "VSS" && ndiff[i] != out_net) sig_cols[ndiff[i]].push_back(i);
+		}
+		for (auto& kv : sig_cols) {
+			auto& cols = kv.second;
+			if (cols.size() < 2) continue;
+			int xl0 = dcx[cols.front()] - CONTACT_HALF - 85;
+			int xl1 = dcx[cols.front()] + CONTACT_HALF + 85;
+			int xr0 = dcx[cols.back()] - CONTACT_HALF - 85;
+			int xr1 = dcx[cols.back()] + CONTACT_HALF + 85;
+			// y：左/右块覆盖 PMOS 接触（低排 1725 起、高排到 2375），底块在 Y 干线下方绕行
+			int y_lo = PMOS_SG_Y0 - 40;               // 1685（避开 Y 段4 上界）
+			int y_hi = PMOS_SH2_Y1 + 85;              // 2460
+			int vdd_tab_bot = PMOS_VDD_Y0 - 80;       // 2195（VDD 下探底）
+			draw_rect(out, static_cast<int>(LAYER::LIG), 20, xl0, y_lo, xl1, y_hi);
+			draw_rect(out, static_cast<int>(LAYER::LIG), 20, xl1, y_lo, xr0, vdd_tab_bot - 170);
+			draw_rect(out, static_cast<int>(LAYER::LIG), 20, xr0, y_lo, xr1, y_hi);
+		}
+	}
+
+	// ---- 11. pin 标记 67:16（吸附轨道）----
+	{
+		// 输入 pin：栅接触吸附轨道
+		for (int i = 0; i < num_gate_real; i++) {
+			std::string gnet = place_sol.nmos[real_col[i]].gate;
+			bool is_input = false;
+			for (auto& n : cell.IOnets) if (n == gnet && n != "VDD" && n != "VSS" && n != out_net) is_input = true;
+			if (!is_input) continue;
+			int mx = snap_track(gcx[i]);
+			draw_rect(out, static_cast<int>(LAYER::LIG), 16, mx - CONTACT_HALF, GCONT_Y0, mx + CONTACT_HALF, GCONT_Y1);
+		}
+		// 输出 pin（Y）：画在 Y 金属覆盖范围内（与 Y 干线/接触金属同 x 区间），保证 100% 被 li1 覆盖
+		bool has_y_p = false;
+		for (int i = 0; i < num_diff; i++) if (pdiff[i] == out_net && need_contact(pdiff[i])) has_y_p = true;
+		if (has_y_p) {
+			// 重新收集 PMOS 侧 Y 接触列（该段独立作用域）
+			std::vector<int> ypc;
+			for (int i = 0; i < num_diff; i++) if (pdiff[i] == out_net && need_contact(pdiff[i])) ypc.push_back(dcx[i]);
+			int y0 = *std::min_element(ypc.begin(), ypc.end()) - CONTACT_HALF;
+			int y1 = *std::max_element(ypc.begin(), ypc.end()) + CONTACT_HALF;
+			// 输出 pin 标记 = Y 接触覆盖金属的 bbox（sky130 的 pin 标记就是 pin 金属位置，
+			// 不吸附轨道——轨道吸附只用于输入，输出以金属 bbox 为准，保证 100% 被 li1 覆盖）
+			int mc = (y0 + y1) / 2;
+			// 若 bbox 小于标记宽，扩展到标记宽
+			int hw = CONTACT_HALF;
+			if (y1 - y0 < 2 * hw) { y0 = mc - hw; y1 = mc + hw; }
+			draw_rect(out, static_cast<int>(LAYER::LIG), 16, y0, PMOS_SG_Y0 + 60, y1, PMOS_SG_Y0 + 230);
+		}
+	}
+std::vector<int> track_y;
 	track_y.push_back(cell_height - active_unit - m1_width / 2);
 	track_y.push_back(cell_height - active_unit - m1_width / 2 - m1_pitch);
 	track_y.push_back(cell_height / 2);
