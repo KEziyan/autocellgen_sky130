@@ -19,22 +19,6 @@ set(CMAKE_CXX_COMPILER ${CXX})
 # Project's name
 project(transistorplacement)
 
-# Z3 SMT prover - Please modify it to suit your environment
-set ( Z3_DIR ./z3/build )
-find_package(Z3
-  REQUIRED
-  CONFIG
-  # `NO_DEFAULT_PATH` is set so that -DZ3_DIR has to be passed to find Z3.
-  # This should prevent us from accidentally picking up an installed
-  # copy of Z3. This is here to benefit Z3's build system when building
-  # this project. When making your own project you probably shouldn't
-  # use this option.
-  NO_DEFAULT_PATH
-)
-message(STATUS "Z3_FOUND: ${Z3_FOUND}")
-message(STATUS "Found Z3 ${Z3_VERSION_STRING}")
-message(STATUS "Z3_DIR: ${Z3_DIR}")
-
 # build configuration - Debug|Release|RelWithDebInfo|MinSizeRel
 set ( CMAKE_BUILD_TYPE Debug )
 
@@ -57,12 +41,10 @@ file(GLOB_RECURSE SRC_FILES_
 set(SRC_FILES ${SRC_FILES_})
 
 # Include Directories
-include_directories(headers ${PATH_SRC} ${Z3_CXX_INCLUDE_DIRS})
+include_directories(headers ${PATH_SRC})
 
 # Link library
-link_libraries ( ${Z3_LIBRARIES} )
-# link_libraries ( ${Z3_LIBRARIES} "-static")
-
+# 
 # Targets
 add_executable(placement ${SRC_FILES})
 

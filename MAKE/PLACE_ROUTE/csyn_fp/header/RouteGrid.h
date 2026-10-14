@@ -1,7 +1,6 @@
 #pragma once
 
 #include "global.h"
-#include "z3++.h"
 
 class Grid_vertex;
 class Grid_edge;

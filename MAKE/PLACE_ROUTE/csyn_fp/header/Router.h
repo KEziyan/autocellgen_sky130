@@ -4,8 +4,6 @@
 #include "global.h"
 #include "beol_data.h"
 #include "RouteGrid.h"
-#include "z3++.h"
-#include "RoutingResult.h"
 
 enum class routing_direction {BOTH, HOR, VER};
 // === sky130_fd_sc_hd 版图常量（官方 GDS 实测 / tech LEF，单位 nm）===
@@ -53,17 +51,12 @@ public:
 
     void initialize_grid();
     void generate_pin_map();
-    void add_detailed_routing_formulation (z3::context & c, z3::optimize & opt);
 
-    z3::check_result solve_SMT (z3::optimize &opt);
 
-    void gather_result (z3::context &c, z3::optimize &opt);
-    void print_result (std::ofstream &out);
 
     void generate_ascii (std::ofstream &out, std::string cell_name);
     void ascii_to_gdsii (fs::path ascii_path);
 
-    void DFS_Metal (std::shared_ptr<RoutingResult> route, std::vector<Point>& components, int y, int x, std::vector<std::vector<bool>>& explored, int metal_layer);
 
 
 public:
@@ -77,7 +70,6 @@ public:
     std::unordered_map<std::string, std::vector<std::vector<Point>>> floating_pins;
     std::unordered_map<std::string, std::vector<std::vector<Point>>> IO_floating_pins;
     
-    std::unordered_map<std::string, std::shared_ptr<RoutingResult>> routing_result;
 
     std::vector<std::tuple<std::string, std::string, int, int, int>> mol_active;
 
